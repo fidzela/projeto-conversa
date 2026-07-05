@@ -1,7 +1,8 @@
-# 08 — Render incremental, limpeza do campo e performance (1.0.1)
+# 08 — Render incremental, limpeza do campo e performance (1.0.1 / 1.0.2)
 
-Documenta os achados e correções da **1.0.1**, a partir do teste real da 1.0.0
-(boot corrigido → plugin passou a rodar de fato).
+Documenta os achados e correções da **1.0.1** (a partir do teste real da 1.0.0,
+com o boot corrigido) e da **1.0.2** (carregamento inicial "últimas N
+mensagens", resolvido no código — seção 8.3).
 
 ---
 
@@ -80,10 +81,10 @@ envio. Desligável por `clear_composer_on_success` (settings) / `clear_on_succes
 
 ---
 
-## 8.3 Performance do carregamento inicial (últimas N mensagens)
+## 8.3 Performance do carregamento inicial — últimas N mensagens (1.0.2)
 
 ### Diagnóstico
-A query do listing (Query 678) traz **todas** as mensagens, **sem LIMIT**:
+A CCT Query do listing traz **todas** as mensagens, **sem LIMIT**:
 
 ```sql
 SELECT * FROM wp_jet_cct_mensagens_
@@ -91,44 +92,99 @@ WHERE conversa_id = %ID% AND cct_status = 'publish'
 ORDER BY cct_created ASC;
 ```
 
-Com 40–60 mensagens já pesa; não escala. O `CCT Query` do Query Builder só
-oferece "number" (limita os **primeiros** N pela ordem — com `ASC` isso são os
-**mais antigos**, o oposto do que um chat quer).
+Com 40–60 mensagens já pesa; não escala. Na UI, o `CCT Query` do Query Builder
+só oferece um `Order/Order By` e um `number` — query **linear**. Para um chat, o
+que se quer são as **N mais recentes**, exibidas do mais antigo → mais novo:
+isso exige "pegar as N do fim e reordenar", que em SQL puro é uma **subquery**.
 
-### Coordenada nativa (JetEngine) — SQL Query "últimas N ascendentes"
-Trocar a fonte do Listing 56326 para uma **SQL Query** do Query Builder em
-**modo avançado**, com subquery:
+### Por que NÃO dá para resolver na UI / com SQL Query (comprovado no site)
+Duas barreiras, ambas verificadas em produção:
 
-```sql
-SELECT * FROM (
-    SELECT * FROM wp_jet_cct_mensagens_
-    WHERE conversa_id = %conversa_id_dinamico% AND cct_status = 'publish'
-    ORDER BY cct_created DESC
-    LIMIT 30
-) AS recent
-ORDER BY recent.cct_created ASC;
+1. **A CCT Query da UI não monta subquery.** Dá para escrever
+   `... ORDER BY cct_created DESC LIMIT 30`, mas não o invólucro
+   `SELECT * FROM ( ... ) AS recent ORDER BY recent.cct_created ASC`. Sem o
+   invólucro, ou você mostra os 30 mais **novos** em ordem invertida, ou os 30
+   mais **antigos** — nunca "os 30 novos em ordem cronológica".
+2. **O Listing só renderiza com CCT Query.** Ao trocar a fonte do Listing 56326
+   para uma **SQL Query** (onde a subquery seria possível), o grid **não exibe
+   nenhum item**. É um sintoma reincidente (já aparecia nas primeiras versões).
+   Logo, mudar o *tipo* da query não é uma opção: a fonte precisa continuar
+   sendo CCT Query.
+
+**Conclusão:** a reordenação "DESC LIMIT N → ASC" tem de viver no **código**,
+por cima da CCT Query que já funciona — sem trocar o tipo da query e sem tocar
+na configuração dela na UI.
+
+### Solução (1.0.2) — dois hooks nativos da Query
+A CCT Query passa por `Base_Query::get_items()`
+(`query-builder/queries/base.php`). Dois pontos de extensão nativos resolvem tudo:
+
+**a) Forçar "as N mais recentes" — `after-query-setup` (`base.php:397`)**
+
+```php
+add_action( 'jet-engine/query-builder/query/after-query-setup', function ( $query ) {
+    if ( ! is_messages_query( $query ) ) return;
+    $query->final_query['number'] = 30;
+    $query->final_query['order']  = array(
+        array( 'orderby' => 'cct_created', 'order' => 'DESC' ),
+    );
+} );
 ```
 
-- Traz as **30 mais recentes**, exibidas do mais antigo → mais novo (mesma
-  ordem de hoje). **O append em tempo real e o scroll continuam iguais** — nada
-  no plugin muda.
-- **Atenção ao valor dinâmico:** o `conversa_id = 0` que aparece no preview é só
-  porque o Query Builder não tem contexto de post na tela de edição. Em produção
-  precisa ser o **macro dinâmico** (o mesmo binding que a Query 678 já usa hoje
-  para resolver o `conversa_id`) — dentro do `WHERE` da subquery. Não deixar `0`
-  fixo.
+Roda **dentro** do `setup_query` (`base.php:392-397`), então:
+- o `final_query` já está montado com o **`conversa_id` resolvido** (macro
+  aplicado em `base.php:354`) — nada de `conversa_id = 0`;
+- é **antes** de `_get_items()` ler `number`/`order` (`cct query.php:38-90` →
+  `db->query( $args, $limit, $offset, $order )`), então o DB devolve as 30 mais
+  recentes de forma barata (`DESC LIMIT 30`);
+- é **antes** do hash de cache: `get_query_hash()` chama `setup_query()` e só
+  então hasheia o `final_query` (`base.php:111,119-122`) — a mutação entra no
+  hash, o cache fica consistente (não grava "30 itens" sob a chave da query
+  "sem limite").
+
+O formato do `order` é o que o CCT espera: lista de `{ orderby, order }`
+(`db.php:707-709` → `base-db.php:914-968`). `cct_created` é a coluna nativa de
+criação do CCT.
+
+**b) Reexibir cronologicamente — `query/items` (`base.php:591`; `README:1139`)**
+
+```php
+add_filter( 'jet-engine/query-builder/query/items', function ( $items, $query ) {
+    if ( ! is_messages_query( $query ) ) return $items;
+    return array_reverse( $items );  // DESC (novos primeiro) → ASC (cronológico)
+}, 10, 2 );
+```
+
+As 30 vieram "mais novas primeiro"; o `array_reverse` devolve a ordem visual do
+chat (mais antiga no topo, mais nova embaixo). É exatamente o efeito da subquery
+`( ... DESC LIMIT 30 ) ORDER BY ASC`, só que a metade interna (`DESC LIMIT 30`)
+é feita no hook **(a)** e a externa (`ORDER BY ASC`) no hook **(b)**.
+
+### Identificação da query (sem hardcode, sem engessar)
+`is_messages_query()` casa **CCT Query** (`query_type === 'custom-content-type'`,
+`manager.php:25`) cujo `final_query['content_type']` é o `cct_slug`
+(`mensagens_`). Assim o mecanismo **não depende do ID do Listing nem da Query**:
+trocar o layout do card, o Listing ou a Query — desde que continue uma CCT Query
+sobre `mensagens_` — mantém o comportamento. Para cenários com mais de uma
+listagem do mesmo CCT, `messages_query_id` (setting) limita ao ID exato.
+Tudo desligável por `initial_limit = 0` (volta a mostrar todas).
 
 ### Por que isto NÃO quebra o tempo real (o ponto que derrubava as versões antigas)
-O endpoint `after` lê o CCT **direto pela API do factory** (`_ID > X`) e o
-`render_items` renderiza os itens que eu passo pelo `posts_loop` — **ambos
-independentes da fonte de query do Listing**. A fonte da query só afeta o
-**render inicial** e o load-more. Trocar para SQL Query afeta só o carregamento
-inicial; o incremental segue intacto. E o `state.lastId` do runtime vem do
-`_ID` máximo real do CCT (via `get_status`), então continua correto mesmo com o
-listing mostrando só as 30 últimas.
+O endpoint `after` lê o CCT **direto pela Factory** (`data.php:164` →
+`$factory->db->query()` com `_ID > X`, ordem `_ID ASC`) — **fora** do
+`Base_Query`, então os hooks `query/*` **não o tocam**. O `render_items`
+renderiza pelo `posts_loop` os itens que eu passo. A mutação só afeta:
+- o **render inicial** do Listing (o que queríamos limitar), e
+- o **`fullRefresh`** (endpoint nativo `get_listing`, que passa pela mesma
+  Query) — que assim fica **consistente** com o primeiro paint (também as N
+  últimas). 
+
+O `state.lastId` do runtime vem do `_ID` máximo real do CCT (via `get_status`,
+`data.php:104-116`), independente do que o Listing mostra — continua correto
+mesmo exibindo só as 30 últimas.
 
 ### "Ver mensagens mais antigas" (rolar pra cima) — próximo incremento
-Fica faltando carregar as mensagens além das 30 ao rolar pro topo. É simétrico
-ao `after`: um passo futuro (endpoint/gatilho `before` com `_ID < X`, ou o
-load-more nativo em modo "prepend"). Não incluído na 1.0.1 para não acoplar sem
-teste no site.
+Fica faltando carregar as mensagens além das N ao rolar pro topo. É simétrico ao
+`after`: um passo futuro (gatilho `before` com `_ID < X` em modo "prepend", ou o
+load-more nativo — a CCT Query com `number = N` já pagina o restante em DESC).
+Não incluído na 1.0.2 para não acoplar sem teste no site.

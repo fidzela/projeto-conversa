@@ -79,6 +79,25 @@ class Conversa_Chat {
 				'footer'   => '#footer-conversa',
 			),
 
+			// --- Carregamento inicial (performance) -------------------------------
+			// Quantas mensagens o Listing renderiza no primeiro paint. O plugin
+			// pega as N MAIS RECENTES (order DESC + LIMIT no código) e reexibe do
+			// mais antigo → mais novo, via os hooks nativos da Query do JetEngine
+			// (after-query-setup + query/items). Isso resolve a lentidão com
+			// 40–60 mensagens SEM subquery na UI (a CCT Query só faz query linear)
+			// e SEM tocar na sua CCT Query: ela pode continuar como está.
+			//   0  = desligado (mostra todas, comportamento antigo).
+			//   30 = últimas 30 (padrão).
+			'initial_limit'   => 30,
+			// ID da CCT Query que alimenta o Listing das mensagens.
+			//   0 = auto: casa qualquer CCT Query sobre o 'cct_slug' (mensagens_).
+			//   >0 = cirúrgico: limita/reordena SÓ essa query (use se houver mais
+			//        de uma listagem do mesmo CCT e você quiser tratar só uma).
+			'messages_query_id' => 0,
+			// Coluna de data do CCT usada para ordenar "as mais recentes".
+			// 'cct_created' é a coluna nativa de criação do CCT.
+			'messages_order_field' => 'cct_created',
+
 			// --- Real-time --------------------------------------------------------
 			'realtime'        => true,
 			'active_poll_ms'  => 4000,    // polling com usuário ativo
