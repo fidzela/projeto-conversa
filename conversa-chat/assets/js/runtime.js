@@ -237,27 +237,43 @@
 
 		return postAjax( cfg.actions.after, { after_id: afterId } )
 			.then( function ( data ) {
-				var appended = appendItemsHtml( data.html || '' );
+
+				// 1. Assets ANTES do append: enqueueAssetsFromResponse injeta o
+				//    CSS dos widgets do card no <head> (síncrono) e agenda os
+				//    scripts (assíncrono, em JetEngine.assetsPromises). É o que
+				//    o load-more nativo faz primeiro (main.js:551).
+				enqueueAssets( data );
+
+				// 2. Append + dedup por data-post-id (atributo nativo do grid).
+				var nodes = appendItemsHtml( data.html || '' );
 
 				if ( data.status ) applyStatus( data.status );
 
-				if ( appended > 0 ) {
+				if ( nodes.length ) {
+					// 3. Religa os widgets SÓ depois que os scripts assíncronos
+					//    carregarem (Promise.all(assetsPromises) — main.js:598).
+					//    É o que impede o "primeiro item pelado".
+					initHandlersAfterAssets( nodes );
+
 					markActive( 'messages-appended' );
 					emit( 'conversa-chat:messages-appended', {
 						reason: reason || 'after',
 						afterId: afterId,
-						appended: appended
+						appended: nodes.length
 					} );
 					if ( window.ConversaChatLayout ) {
 						window.ConversaChatLayout.scrollOnNewMessage();
 					}
-				} else if ( data.appended > 0 ) {
+					return true;
+				}
+
+				if ( data.appended > 0 ) {
 					// O servidor tinha itens mas nada entrou no DOM
 					// (container ausente/estado inesperado) → full nativo.
 					return fullRefresh( 'append-miss:' + reason );
 				}
 
-				return appended > 0;
+				return false;
 			} )
 			.catch( function ( err ) {
 				pauseIf429( err );
@@ -274,7 +290,7 @@
 
 		html = String( html || '' ).trim();
 
-		if ( ! container || ! html ) return 0;
+		if ( ! container || ! html ) return [];
 
 		var tpl = document.createElement( 'template' );
 		tpl.innerHTML = html;
@@ -293,19 +309,30 @@
 			if ( id > state.lastId ) state.lastId = id;
 		} );
 
-		if ( appendedNodes.length ) {
-			reinitJetEngine( appendedNodes );
-		}
-
-		return appendedNodes.length;
+		return appendedNodes; // NÃO religa aqui — quem chama decide (após assets).
 	}
 
 	/**
-	 * Religa os handlers dos widgets nos nós novos usando a MESMA API que o
-	 * load-more nativo usa (main.js:599). Sem ela, sliders/popups/etc.
-	 * dentro do card não inicializam.
+	 * Injeta os assets (CSS/JS de widget) que o servidor devolveu no response,
+	 * usando a MESMA API do load-more nativo: CSS vai pro <head> na hora,
+	 * scripts entram assíncronos e ficam em JetEngine.assetsPromises. Dedup
+	 * por handle é do próprio JetEngine (main.js:1456-1481).
 	 */
-	function reinitJetEngine( nodes ) {
+	function enqueueAssets( data ) {
+		if ( window.JetEngine && typeof window.JetEngine.enqueueAssetsFromResponse === 'function' ) {
+			try {
+				window.JetEngine.enqueueAssetsFromResponse( { data: data } );
+			} catch ( e ) {
+				log( 'enqueueAssets fail:', e );
+			}
+		}
+	}
+
+	/**
+	 * Religa os handlers dos widgets nos nós novos (mesma API do load-more,
+	 * main.js:599). Sem ela, sliders/popups/etc. dentro do card não iniciam.
+	 */
+	function initHandlers( nodes ) {
 		if ( ! window.JetEngine || ! window.jQuery ) return;
 
 		try {
@@ -315,6 +342,29 @@
 		} catch ( e ) {
 			log( 'initElementsHandlers fail:', e );
 		}
+	}
+
+	/**
+	 * Espera os scripts assíncronos carregarem ANTES de religar os handlers —
+	 * exatamente a sequência do load-more nativo (main.js:598-601). Esta espera
+	 * é o que corrige o "primeiro item pelado": no primeiro append um script do
+	 * widget ainda não terminou de carregar quando o init roda; a partir do
+	 * segundo ele já está na página, por isso "os próximos montam certo".
+	 */
+	function initHandlersAfterAssets( nodes ) {
+		if ( ! window.JetEngine || ! window.jQuery ) {
+			initHandlers( nodes );
+			return;
+		}
+
+		var promises = window.JetEngine.assetsPromises || [];
+
+		Promise.resolve( Promise.all( promises ) ).then( function () {
+			initHandlers( nodes );
+			if ( window.JetEngine ) {
+				window.JetEngine.assetsPromises = [];
+			}
+		} );
 	}
 
 	// ------------------------------------------------------------------
@@ -383,7 +433,7 @@
 					try { window.JetEngine.enqueueAssetsFromResponse( json ); } catch ( e ) {}
 				}
 
-				reinitJetEngine( [ next ] );
+				initHandlersAfterAssets( [ next ] );
 
 				state.lastId = Math.max( state.lastId, getMaxIdInDom() );
 
@@ -747,7 +797,7 @@
 
 		window.ConversaChatRuntime = {
 			booted: true,
-			version: '1.0.0',
+			version: '1.0.1',
 			checkStatus: checkStatus,
 			refreshFull: function () { return fullRefresh( 'manual' ); },
 			isPrimary: function () { return state.isPrimary; },

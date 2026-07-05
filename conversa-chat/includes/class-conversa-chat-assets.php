@@ -143,6 +143,7 @@ class Conversa_Chat_Assets {
 				'form'     => implode( ', ', $form_selectors ),
 			),
 			'realtime'       => (bool) $realtime,
+			'clear_on_success' => (bool) $settings['clear_composer_on_success'],
 			'initial_status' => $status,
 			'active_poll_ms' => (int) $settings['active_poll_ms'],
 			'idle_poll_ms'   => (int) $settings['idle_poll_ms'],

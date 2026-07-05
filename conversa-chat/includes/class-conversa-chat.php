@@ -87,6 +87,11 @@ class Conversa_Chat {
 			'after_limit'     => 20,      // máx. de mensagens por fetch incremental
 			'tab_lock'        => true,    // só uma aba envia/faz polling
 
+			// Limpa o textarea após envio OK (fallback ao "Clear form after
+			// submit" nativo do JFB, que vem desligado). Desligue se preferir
+			// usar só o clear nativo do JFB.
+			'clear_composer_on_success' => true,
+
 			// --- Endpoint / proteção ----------------------------------------------
 			'status_cache_ttl' => 2,      // segundos de cache do status (object cache)
 			'rate_status'      => 80,     // req/min por usuário+conversa

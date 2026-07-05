@@ -153,14 +153,27 @@ class Conversa_Chat_Ajax {
 
 		$status = Conversa_Chat_Data::get_status( $req['conversa_id'] );
 
-		wp_send_json_success(
-			array(
-				'conversa_id' => $req['conversa_id'],
-				'after_id'    => $after_id,
-				'appended'    => count( $items ),
-				'html'        => $html,
-				'status'      => is_wp_error( $status ) ? null : $status,
-			)
+		$response = array(
+			'conversa_id' => $req['conversa_id'],
+			'after_id'    => $after_id,
+			'appended'    => count( $items ),
+			'html'        => $html,
+			'status'      => is_wp_error( $status ) ? null : $status,
 		);
+
+		// Assets dos widgets do card (CSS/JS enfileirados DURANTE o posts_loop
+		// de render_items, acima). Sem isto o PRIMEIRO item incremental
+		// renderiza "pelado" e só monta certo depois que um script assíncrono
+		// carrega — exatamente o bug observado ("primeiro envio quebra o
+		// layout, os próximos montam"). O load-more nativo resolve assim
+		// (ajax-handlers.php:469): o método é public static e lê
+		// wp_styles()/wp_scripts()->queue do MESMO request, preenchendo
+		// $response['styles'] e $response['scripts']. O cliente injeta e
+		// deduplica por handle (main.js:1456-1481).
+		if ( class_exists( 'Jet_Engine_Listings_Ajax_Handlers' ) ) {
+			Jet_Engine_Listings_Ajax_Handlers::maybe_add_enqueue_assets_data( $response );
+		}
+
+		wp_send_json_success( $response );
 	}
 }
