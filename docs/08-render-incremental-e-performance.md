@@ -1,8 +1,15 @@
-# 08 — Render incremental, limpeza do campo e performance (1.0.1 / 1.0.2)
+# 08 — Render incremental, limpeza do campo e performance (1.0.1 → 1.0.4)
 
 Documenta os achados e correções da **1.0.1** (a partir do teste real da 1.0.0,
-com o boot corrigido) e da **1.0.2** (carregamento inicial "últimas N
-mensagens", resolvido no código — seção 8.3).
+com o boot corrigido), da **1.0.2** (carregamento inicial "últimas N mensagens",
+resolvido no código — seção 8.3), da **1.0.3** (carregar antigas / prepend no
+topo — seção 8.4) e da **1.0.4** (o desfecho real do bug do "primeiro item
+pelado" — seção 8.1 — e o reforço de consistência do carregar-antigas).
+
+> **O coração do projeto tem doc próprio:** a interface do render incremental com
+> o **Listing** (o ponto onde o usuário interage e onde este bug morava) está
+> detalhada em [`09-o-coracao-interface-com-o-listing.md`](09-o-coracao-interface-com-o-listing.md).
+> Comece por lá se o objetivo é entender/alterar o render das mensagens.
 
 ---
 
@@ -59,24 +66,53 @@ respeito a assets. É o ponto onde as versões antigas empacavam (sem a raiz do
 código, tentavam clonar/estilizar à mão); aqui a fronteira volta a ser o que o
 JetEngine já faz.
 
-### Reforço (1.0.3) — quando a 1.0.1 não bastou
-Em teste real o "primeiro item pelado" **persistiu** em algum cenário. Duas
-frentes na 1.0.3, ambas aproximando o render do load-more nativo:
+### Tentativa (1.0.3) — a hipótese de assets/timing, que NÃO resolveu
+Como a 1.0.1 não bastou no cenário real, a 1.0.3 apostou (erradamente) que ainda
+era assets/timing e foi por dois caminhos:
 
 1. **Render fiel (servidor).** `render_items` passou a usar os **widget_settings
-   reais** do grid (o cliente os envia a partir do `data-nav`) e a disparar os
-   mesmos `do_action` pré-render do nativo antes do `posts_loop`
-   (`jet-engine/listings/ajax/load-more` e
-   `jet-engine/elementor-views/ajax/load-more` com a instância do widget —
-   `ajax-handlers.php:338-357`). Isso dá a Elementor/extensões a mesma chance de
-   registrar/enfileirar os assets do card. O `listing_id` é sempre reimposto
-   pelo servidor (o cliente nunca escolhe o listing).
-2. **Settle + diagnóstico (cliente).** No **primeiro** append da sessão,
-   `initHandlersAfterAssets` espera 2 frames antes de religar (uma única vez, sem
-   dupla init) — cobre um assentamento tardio de CSS/Elementor. Com `cfg.debug`,
-   o runtime loga se o response trouxe `scripts`/`styles` e quantas
-   `assetsPromises` ficaram pendentes — é o sinal que confirma, ao vivo, se a
-   causa era assets ausentes no response ou timing.
+   reais** do grid e a disparar os `do_action` pré-render do nativo antes do
+   `posts_loop` (`ajax-handlers.php:338-357`).
+2. **Settle + diagnóstico (cliente).** No primeiro append, `initHandlersAfterAssets`
+   esperava 2 frames antes de religar, e um log de debug reportava os
+   `scripts`/`styles` do response.
+
+**Resultado do teste real: comportamento idêntico.** O primeiro item continuou
+"pelado" e os seguintes certos — exatamente como antes. Ou seja, **assets/timing
+nunca foram a causa**. O item **1** (render fiel) foi mantido por ser paridade
+legítima com o load-more nativo (bom para qualquer layout de card — não engessar),
+mas com o comentário corrigido: **não é** a correção do bug. O item **2** (settle
+de frames + log de assets) era **lixo especulativo** e foi **removido na 1.0.4**.
+
+### Causa REAL e desfecho (1.0.4) — era autoração do card, não código
+O autor isolou o bug por eliminação, alterando o **layout do card no Elementor**:
+
+> Removi o **Listing** de dentro do card e, no lugar, inseri uma **imagem** com o
+> contexto **"CCT Item Author"**. O layout passou a funcionar. O bug ocorria em
+> **1 único elemento** do card — justamente um **Listing ANINHADO** (a imagem
+> vinha de dentro dele). O problema estava em **como esse Listing interno se
+> comporta na re-renderização** após o envio (o primeiro append da sessão).
+
+Ou seja: o card de mensagem continha um **Listing dentro do Listing**. Um Listing
+aninhado tem seu próprio ciclo de inicialização (query + assets + hidratação) que
+**não sobrevive bem ao primeiro `initElementsHandlers`** sobre o nó recém
+anexado — por isso "o primeiro quebra, o resto monta" e o reload conserta. Trocar
+o elemento por um widget de **imagem com contexto CCT Item Author** (que resolve o
+autor no próprio render, sem um sub-Listing) **elimina** a causa.
+
+**Duas conclusões importantes:**
+- O bug **nunca foi do plugin** — foi de **autoração** do template do card. Nenhum
+  código de assets/timing poderia corrigi-lo; só o layout.
+- **Alterar o layout do card NÃO quebrou o real-time** — o card novo apareceu
+  correto nas mensagens incrementais sem tocar em uma linha do plugin. É a prova
+  viva do princípio de **não engessar**: o render incremental usa o template real,
+  então o layout é livre. (Nas versões antigas, com o "mirror renderer", uma
+  mudança dessas quebraria tudo.)
+
+> **Diretriz de autoração (registrada):** evite **Listing dentro do card do
+> Listing** de mensagens. Para dados do autor/relacionados, prefira **dynamic
+> tags** / contexto **CCT Item Author** / campos dinâmicos, que resolvem no render
+> do próprio card e sobrevivem ao append incremental. Ver [`docs/09`](09-o-coracao-interface-com-o-listing.md).
 
 ---
 
@@ -250,6 +286,35 @@ não o afetam (o lote antigo não é re-limitado nem reinvertido).
 - O `after` (mensagem nova) segue anexando no fim + scroll pro fim.
 - Nenhuma dependência da fonte da query do Listing: `before` é uma leitura
   direta do CCT, como o `after`.
+
+### Reforço de consistência (1.0.4)
+Com o carregar-antigas **funcionando** (ordem correta, itens no lugar certo), a
+1.0.4 blindou os pontos onde ele poderia se desalinhar — sem engessar, só
+fechando arestas:
+
+- **Scroll só dispara "para cima".** O listener guarda o `scrollTop` anterior e
+  só chama `fetchBefore` quando o gesto é **ascendente** e perto do topo. Como a
+  reancoragem do prepend empurra o `scrollTop` **para baixo**, um prepend nunca se
+  auto-dispara como se fosse rolagem do usuário (evita loop de carga).
+- **Cooldown entre cargas por scroll** (`OLDER_SCROLL_COOLDOWN_MS`, 500ms). A
+  requisição em voo já é barrada por `beforeInFlight`; o cooldown evita que o
+  **mesmo gesto** contínuo enfileire a carga seguinte no instante em que a
+  anterior termina. O botão e cargas espaçadas seguem livres.
+- **Frontier à prova de duplicata.** O `oldestId` (topo do histórico) só anda para
+  **baixo** (`Math.min`). Se um lote vier **todo deduplicado** (nada novo entrou),
+  o frontier é recuado para **abaixo do `before_id` pedido**, garantindo que a
+  próxima carga **progrida** em vez de reconsultar a mesma janela.
+- **Esgotamento robusto.** `olderExhausted` liga por `has_more` do servidor **ou**
+  quando o topo alcança o começo absoluto (`_ID <= 1`).
+- **Reset após full refresh.** Quando o grid é **trocado inteiro**
+  (`fullRefresh`, ex.: mudança retroativa), `resetOlderState()` recalcula o
+  `oldestId` a partir do novo DOM e reavalia o esgotamento — o carregar-antigas
+  não fica com um frontier obsoleto do grid anterior. Também re-neutraliza o
+  load-more nativo do grid recém-inserido.
+
+Esses mecanismos vivem **só no cliente** (`runtime.js`): o servidor (`get_before`)
+continua uma leitura pura e sem estado do CCT. Detalhe do ciclo em
+[`docs/09`](09-o-coracao-interface-com-o-listing.md).
 
 ### Configuração (settings)
 `load_older` (on/off), `older_batch` (N por carga — TESTE: 3, produção ~15),

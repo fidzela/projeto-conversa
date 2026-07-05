@@ -159,12 +159,16 @@ class Conversa_Chat_Ajax {
 
 	/**
 	 * Anexa os assets dos widgets do card ao response (CSS/JS enfileirados
-	 * DURANTE o posts_loop de render_items). Sem isto o PRIMEIRO item
-	 * incremental podia renderizar "pelado" e só montar certo depois que um
-	 * script assíncrono carregasse. É o mesmo método público do load-more
-	 * nativo (ajax-handlers.php:577): lê wp_styles()/wp_scripts()->queue do
-	 * MESMO request e preenche $response['styles'] / $response['scripts']. O
+	 * DURANTE o posts_loop de render_items). É o mesmo método público do
+	 * load-more nativo (ajax-handlers.php:577): lê wp_styles()/wp_scripts()->queue
+	 * do MESMO request e preenche $response['styles'] / $response['scripts']. O
 	 * cliente injeta e deduplica por handle (main.js:1456-1481).
+	 *
+	 * Paridade legítima com o load-more nativo: garante que um card com QUALQUER
+	 * widget (o autor pode mudar o layout — princípio de não engessar) traga seus
+	 * assets no primeiro paint. NÃO é a correção do bug do "primeiro item pelado":
+	 * esse bug era de autoração do card (Listing aninhado) e foi resolvido no
+	 * layout (ver docs/09).
 	 */
 	private static function attach_assets( &$response ) {
 		if ( class_exists( 'Jet_Engine_Listings_Ajax_Handlers' ) ) {

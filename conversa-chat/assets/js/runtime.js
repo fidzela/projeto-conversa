@@ -18,8 +18,14 @@
  *
  * Eventos emitidos (para layout/composer/extensões):
  *  - conversa-chat:messages-appended
+ *  - conversa-chat:messages-prepended
  *  - conversa-chat:messages-replaced
  *  - conversa-chat:tabstate
+ *
+ * ESTE É O CORAÇÃO DO PROJETO (lado cliente). O ciclo completo — mensagem nova,
+ * mensagem antiga (prepend), refresh completo — e as INVARIANTES de cada caminho
+ * estão documentados em docs/09-o-coracao-interface-com-o-listing.md. Leia antes
+ * de alterar o fluxo de itens.
  */
 (function () {
 	"use strict";
@@ -55,7 +61,7 @@
 		lastId: 0,
 		oldestId: 0,
 		olderExhausted: false,
-		firstAppendDone: false,
+		lastOlderLoadAt: 0,
 		knownCount: 0,
 		knownHash: ''
 	};
@@ -178,15 +184,6 @@
 		}
 	}
 
-	function logAssets( label, data ) {
-		if ( ! cfg.debug ) return;
-		log( label, {
-			scripts: data && data.scripts ? Object.keys( data.scripts ) : null,
-			styles: data && data.styles ? Object.keys( data.styles ) : null,
-			pending: ( window.JetEngine && window.JetEngine.assetsPromises || [] ).length
-		} );
-	}
-
 	// ------------------------------------------------------------------
 	// AJAX (endpoints próprios)
 	// ------------------------------------------------------------------
@@ -301,7 +298,6 @@
 				//    scripts (assíncrono, em JetEngine.assetsPromises). É o que
 				//    o load-more nativo faz primeiro (main.js:551).
 				enqueueAssets( data );
-				logAssets( 'after assets:', data );
 
 				// 2. Append + dedup por data-post-id (atributo nativo do grid).
 				var nodes = appendItemsHtml( data.html || '' );
@@ -311,11 +307,7 @@
 				if ( nodes.length ) {
 					// 3. Religa os widgets SÓ depois que os scripts assíncronos
 					//    carregarem (Promise.all(assetsPromises) — main.js:598).
-					//    No PRIMEIRO append da sessão, um settle extra de 2 frames
-					//    dá tempo do Elementor/CSS assentarem (sem dupla init) —
-					//    reforço contra o "primeiro item pelado".
-					initHandlersAfterAssets( nodes, ! state.firstAppendDone );
-					state.firstAppendDone = true;
+					initHandlersAfterAssets( nodes );
 
 					markActive( 'messages-appended' );
 					emit( 'conversa-chat:messages-appended', {
@@ -438,7 +430,6 @@
 			.then( function ( data ) {
 
 				enqueueAssets( data );
-				logAssets( 'before assets:', data );
 
 				// Prepend ANCORADO: a mensagem que o usuário lia não se move.
 				var nodes = [];
@@ -450,17 +441,31 @@
 					doPrepend();
 				}
 
-				// Novo topo + fim do histórico.
-				if ( data.oldest_id ) {
-					state.oldestId = parseInt( data.oldest_id, 10 ) || state.oldestId;
+				// Avança o "topo" (frontier) do histórico. Preferimos o oldest_id
+				// do servidor; se ausente, caímos pro menor _ID no DOM. Se o lote
+				// veio todo deduplicado (nada novo), forçamos o frontier abaixo do
+				// before_id pedido para NÃO reconsultar a mesma janela e evitar
+				// loop de scroll-no-topo.
+				var serverOldest = parseInt( data.oldest_id, 10 ) || 0;
+
+				if ( serverOldest ) {
+					state.oldestId = ( state.oldestId === 0 )
+						? serverOldest
+						: Math.min( state.oldestId, serverOldest );
 				} else {
 					state.oldestId = getMinIdInDom();
 				}
-				state.olderExhausted = ! data.has_more;
+
+				if ( ! nodes.length && serverOldest && serverOldest >= beforeId ) {
+					// Servidor devolveu itens, mas todos já estavam no DOM: recua o
+					// frontier 1 abaixo do pedido para a próxima carga progredir.
+					state.oldestId = Math.min( state.oldestId || beforeId, beforeId - 1 );
+				}
+
+				state.olderExhausted = ! data.has_more || state.oldestId <= 1;
 
 				if ( nodes.length ) {
-					initHandlersAfterAssets( nodes, ! state.firstAppendDone );
-					state.firstAppendDone = true;
+					initHandlersAfterAssets( nodes );
 					emit( 'conversa-chat:messages-prepended', {
 						reason: reason || 'before',
 						prepended: nodes.length,
@@ -478,6 +483,7 @@
 			} )
 			.finally( function () {
 				state.beforeInFlight = false;
+				state.lastOlderLoadAt = Date.now();
 				setOlderLoading( false );
 			} );
 	}
@@ -515,13 +521,20 @@
 	}
 
 	/**
-	 * Espera os scripts assíncronos carregarem ANTES de religar os handlers —
-	 * exatamente a sequência do load-more nativo (main.js:598-601). Esta espera
-	 * é o que corrige o "primeiro item pelado": no primeiro append um script do
-	 * widget ainda não terminou de carregar quando o init roda; a partir do
-	 * segundo ele já está na página, por isso "os próximos montam certo".
+	 * Espera os scripts assíncronos dos widgets carregarem ANTES de religar os
+	 * handlers — exatamente a sequência do load-more nativo (main.js:598-601).
+	 * Sem isto, um widget cujo JS ainda não chegou não inicia no card recém
+	 * anexado.
+	 *
+	 * NOTA HISTÓRICA (bug do "primeiro item pelado"): este caminho de assets NÃO
+	 * era a causa daquele bug. A causa era de AUTORAÇÃO do card — um Listing
+	 * ANINHADO dentro do card (a imagem "CCT Item Author") que o JetEngine não
+	 * re-hidrata bem no primeiro append. Resolvido trocando o layout do card
+	 * (ver docs/09). As tentativas de "settle" de frames aqui foram removidas
+	 * por não terem efeito. Mantemos apenas a espera de assets, que é a
+	 * paridade legítima com o load-more nativo.
 	 */
-	function initHandlersAfterAssets( nodes, settle ) {
+	function initHandlersAfterAssets( nodes ) {
 		if ( ! window.JetEngine || ! window.jQuery ) {
 			initHandlers( nodes );
 			return;
@@ -533,19 +546,7 @@
 			if ( window.JetEngine ) {
 				window.JetEngine.assetsPromises = [];
 			}
-
-			if ( settle ) {
-				// Espera 2 frames antes de religar (UMA única vez, sem dupla
-				// init): dá tempo do Elementor/CSS assentarem no primeiro
-				// append da sessão — reforço contra o "primeiro item pelado".
-				window.requestAnimationFrame( function () {
-					window.requestAnimationFrame( function () {
-						initHandlers( nodes );
-					} );
-				} );
-			} else {
-				initHandlers( nodes );
-			}
+			initHandlers( nodes );
 		} );
 	}
 
@@ -618,6 +619,12 @@
 				initHandlersAfterAssets( [ next ] );
 
 				state.lastId = Math.max( state.lastId, getMaxIdInDom() );
+
+				// O grid foi TROCADO inteiro: o "topo" (oldestId) e o estado de
+				// esgotamento do histórico precisam ser recalculados a partir do
+				// novo DOM, senão o "carregar antigas" ficaria com um frontier
+				// obsoleto (consistência do load-older após refresh retroativo).
+				resetOlderState();
 
 				emit( 'conversa-chat:messages-replaced', { reason: reason || 'full' } );
 
@@ -874,6 +881,12 @@
 	var olderControl = null;
 	var olderButton = null;
 
+	// Janela mínima entre duas cargas de histórico disparadas por SCROLL. Sem
+	// ela, uma rolagem contínua no topo poderia enfileirar chamadas em sequência
+	// (a de voo é barrada por beforeInFlight, mas a seguinte dispararia no mesmo
+	// gesto). Não afeta o botão nem o gesto seguinte legítimo.
+	var OLDER_SCROLL_COOLDOWN_MS = 500;
+
 	function wantsButton() {
 		return cfg.load_older && ( cfg.older_trigger === 'button' || cfg.older_trigger === 'both' );
 	}
@@ -925,12 +938,25 @@
 		if ( ! messages ) return;
 
 		var TOP_THRESHOLD_PX = 60;
+		var lastScrollTop = messages.scrollTop;
 
 		messages.addEventListener( 'scroll', function () {
+			var top = messages.scrollTop;
+			var goingUp = top < lastScrollTop;
+			lastScrollTop = top;
+
 			if ( state.beforeInFlight || state.olderExhausted ) return;
-			if ( messages.scrollTop <= TOP_THRESHOLD_PX ) {
-				fetchBefore( 'scroll-top' );
-			}
+
+			// Só ao rolar PARA CIMA (gesto de "ver histórico") e perto do topo.
+			// A reancoragem do prepend empurra o scrollTop para baixo, então um
+			// prepend nunca se auto-dispara como se fosse rolagem do usuário.
+			if ( ! goingUp || top > TOP_THRESHOLD_PX ) return;
+
+			// Cooldown entre cargas por scroll (consistência: evita rajada no
+			// mesmo gesto). O botão e as cargas espaçadas seguem livres.
+			if ( ( Date.now() - state.lastOlderLoadAt ) < OLDER_SCROLL_COOLDOWN_MS ) return;
+
+			fetchBefore( 'scroll-top' );
 		}, { passive: true } );
 	}
 
@@ -961,6 +987,24 @@
 		neutralizeNativeLoadMore();
 		ensureOlderControl();
 		bindOlderScroll();
+		updateOlderUI();
+	}
+
+	/**
+	 * Recalcula o estado do "carregar antigas" a partir do DOM atual. Chamado
+	 * após um full refresh (o grid inteiro foi trocado), quando o frontier
+	 * (oldestId) e o esgotamento precisam ser reconciliados com o novo conteúdo.
+	 * Não sabemos o count total aqui, então liberamos novas tentativas (o
+	 * servidor decide has_more no próximo `before`); só marcamos esgotado quando
+	 * o topo já é o começo absoluto do histórico (_ID <= 1).
+	 */
+	function resetOlderState() {
+		if ( ! cfg.load_older ) return;
+
+		state.oldestId = getMinIdInDom();
+		state.olderExhausted = state.oldestId <= 1;
+
+		neutralizeNativeLoadMore();
 		updateOlderUI();
 	}
 
@@ -1078,7 +1122,7 @@
 
 		window.ConversaChatRuntime = {
 			booted: true,
-			version: '1.0.3',
+			version: '1.0.4',
 			checkStatus: checkStatus,
 			refreshFull: function () { return fullRefresh( 'manual' ); },
 			loadOlder: function () { return fetchBefore( 'manual' ); },

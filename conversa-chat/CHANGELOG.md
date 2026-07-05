@@ -2,6 +2,56 @@
 
 Formato: cada versão finalizada gera `dist/conversa-chat-{versao}.zip`.
 
+## 1.0.4
+
+Desfecho do bug do "primeiro item pelado", remoção do lixo das tentativas que não
+o resolveram, reforço de consistência do carregar-antigas e **documentação vasta
+do CORAÇÃO do projeto**. Detalhes em
+[`docs/09-o-coracao-interface-com-o-listing.md`](../docs/09-o-coracao-interface-com-o-listing.md)
+e [`docs/08`](../docs/08-render-incremental-e-performance.md) §8.1/§8.4.
+
+### Resolvido (autoração, não código) — "primeiro item pelado"
+O primeiro item incremental de cada reload renderizava quebrado; do segundo em
+diante, certo. **A causa real não era do plugin:** o card de mensagem tinha um
+**Listing ANINHADO** (a imagem do autor vinha de dentro dele), e um sub-Listing
+não sobrevive à re-renderização/hidratação no primeiro append. O autor resolveu
+**no layout**: trocou o Listing interno por uma **imagem com contexto "CCT Item
+Author"**. O bug desapareceu — e, prova viva do princípio de não engessar,
+**mudar o layout do card não quebrou o real-time** (o render usa o template real).
+Diretriz registrada: **não usar Listing dentro do card** de mensagens (usar
+dynamic tags / CCT Item Author / campos dinâmicos).
+
+### Removido — lixo das tentativas de mitigação (1.0.1/1.0.3) que não resolveram
+As apostas em "assets/timing" não mudaram o comportamento e foram limpas:
+- `initHandlersAfterAssets`: removido o *settle* de 2 frames e o estado
+  `firstAppendDone` (chute especulativo, sem efeito).
+- Removido o `logAssets`/log de diagnóstico de `scripts`/`styles`.
+- Comentários corrigidos em `renderer.php`, `ajax.php` e `runtime.js`: o que
+  ficou de "render fiel ao nativo" (widget_settings reais + `do_action`
+  pré-render + `maybe_add_enqueue_assets_data`) é **paridade legítima** com o
+  load-more nativo (bom para qualquer layout de card), **não** a correção daquele
+  bug — e está reetiquetado como tal.
+
+### Reforçado — consistência do "carregar antigas" (agora que funciona)
+Com o prepend no topo funcionando, blindamos o ciclo (só no cliente; o servidor
+segue uma leitura pura e sem estado):
+- Scroll só dispara em gesto **ascendente** e perto do topo (o prepend empurra o
+  scroll pra baixo e nunca se auto-dispara).
+- **Cooldown** entre cargas por scroll (500ms) evita rajada no mesmo gesto.
+- **Frontier à prova de duplicata:** `oldestId` só anda pra baixo; lote todo
+  deduplicado recua o frontier abaixo do pedido → a próxima carga progride (sem
+  loop).
+- **Reset após full refresh:** ao trocar o grid inteiro, `resetOlderState()`
+  recalcula `oldestId`/esgotamento do novo DOM e re-neutraliza o load-more nativo.
+
+### Documentado — o CORAÇÃO do projeto (doc à parte)
+Novo [`docs/09`](../docs/09-o-coracao-interface-com-o-listing.md): a interface do
+render incremental com o Listing/composer/scroll — os três mecanismos onde o
+usuário interage, os atributos nativos que são contrato (`data-post-id`,
+`data-listing-id`, `data-nav`), o ciclo de mensagem nova/antiga/refresh com as
+**invariantes** de cada um, o estudo de caso do bug e um **checklist** para
+alterar o coração sem quebrar. Comentários no código apontam para ele.
+
 ## 1.0.3
 
 Carregar mensagens ANTIGAS (rolar pra cima, estilo WhatsApp) e reforço no

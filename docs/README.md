@@ -29,7 +29,8 @@ Esta pasta `docs/` é a **fonte única de verdade documental** do projeto. Ela c
 | [05 — Achados e Inconsistências](05-achados-e-inconsistencias.md) | Divergências entre o código do projeto e a raiz real dos plugins (ex.: hook inexistente) |
 | [06 — Diretrizes para a Nova Versão](06-diretrizes-nova-versao.md) | Princípios de arquitetura para reescrever o projeto integrado à raiz dos plugins, sem WPCode e sem engessar |
 | [07 — Plugin `conversa-chat`](07-plugin-conversa-chat.md) | **A nova versão implementada**: arquitetura do plugin, mapeamento nativo por necessidade, fluxo do tempo real e migração |
-| [08 — Render incremental, limpeza e performance (1.0.1 → 1.0.3)](08-render-incremental-e-performance.md) | Correções pós-teste real: assets no incremental (primeiro item "pelado") + render fiel ao load-more nativo, limpeza do textarea, carregamento inicial "últimas N mensagens" via hooks nativos da Query, e o "carregar antigas" (rolar pra cima / prepend com âncora de scroll) |
+| [08 — Render incremental, limpeza e performance (1.0.1 → 1.0.4)](08-render-incremental-e-performance.md) | Correções pós-teste real: assets no incremental, o **desfecho** do bug do "primeiro item pelado" (era Listing aninhado no card — autoração, não código), limpeza do textarea, carregamento inicial "últimas N mensagens" via hooks nativos da Query, "carregar antigas" (prepend com âncora) e seu reforço de consistência |
+| [09 — O CORAÇÃO: a interface com o Listing](09-o-coracao-interface-com-o-listing.md) | **O ponto mais sensível do projeto**: o ciclo de render incremental com o Listing (mensagem nova, antiga e refresh completo), os atributos nativos que são contrato, as invariantes de cada caminho, o estudo de caso do "primeiro item pelado" e o mapa do que dá pra mudar sem quebrar. **Leia antes de alterar o render das mensagens.** |
 
 ---
 
