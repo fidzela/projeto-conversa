@@ -97,6 +97,39 @@
 		window.requestAnimationFrame( _scrollNow );
 	}
 
+	/**
+	 * Ancora a viewport ao PREPENDAR conteúdo no topo (carregar antigas).
+	 * Registra a altura antes, executa a mutação (inserção dos itens no topo)
+	 * e reposiciona o scrollTop pela diferença de altura — a mensagem que o
+	 * usuário estava lendo continua exatamente no mesmo lugar, sem "pulo".
+	 * É o comportamento do WhatsApp/Messenger ao rolar pra cima.
+	 */
+	function anchorForPrepend( mutate ) {
+		var m = getMessages();
+
+		if ( ! m ) {
+			if ( typeof mutate === 'function' ) mutate();
+			return;
+		}
+
+		var prevHeight = m.scrollHeight;
+		var prevTop    = m.scrollTop;
+
+		if ( typeof mutate === 'function' ) mutate();
+
+		// Reancoragem imediata (síncrona).
+		m.scrollTop = prevTop + ( m.scrollHeight - prevHeight );
+
+		// Reancoragem no próximo frame: se um asset (CSS/imagem) do card mudar
+		// a altura logo após o prepend, mantém a viewport parada mesmo assim.
+		window.requestAnimationFrame( function () {
+			var delta = m.scrollHeight - prevHeight;
+			if ( delta > 0 ) {
+				m.scrollTop = prevTop + delta;
+			}
+		} );
+	}
+
 	// ------------------------------------------------------------------
 	// API por contexto
 	// ------------------------------------------------------------------
@@ -268,6 +301,7 @@
 			scrollOnPageshow: scrollOnPageshow,
 			scrollOnTakeover: scrollOnTakeover,
 			scrollOnComposerExpand: scrollOnComposerExpand,
+			anchorForPrepend: anchorForPrepend,
 			isSticky: function () { return state.stickToBottom; },
 			setSticky: function ( value ) {
 				setSticky( value );

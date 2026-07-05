@@ -2,6 +2,40 @@
 
 Formato: cada versão finalizada gera `dist/conversa-chat-{versao}.zip`.
 
+## 1.0.3
+
+Carregar mensagens ANTIGAS (rolar pra cima, estilo WhatsApp) e reforço no
+render incremental. Detalhes em
+[`docs/08-render-incremental-e-performance.md`](../docs/08-render-incremental-e-performance.md).
+
+### Adicionado — "ver mensagens anteriores" (prepend no topo, âncora de scroll)
+O load-more **nativo** do JetEngine anexa a próxima página no **fim** (feed que
+cresce pra baixo) — errado para um chat, onde "carregar mais" = mensagens
+**antigas**, que entram **no topo**. Novo fluxo, simétrico ao `after`:
+- Servidor: endpoint `conversa_chat_before` + `Conversa_Chat_Data::get_before`
+  (`_ID < before_id`, `DESC LIMIT N+1`, `array_reverse` p/ ASC; o +1 sonda
+  `has_more` sem query de count). Render pelo mesmo `posts_loop`.
+- Cliente: `prependItemsHtml` insere no topo com dedup; `anchorForPrepend`
+  (layout) mantém a viewport parada na mesma mensagem (sem "pulo"). Gatilho por
+  **rolar ao topo** e/ou **botão** ("Ver mensagens anteriores"). O load-more
+  nativo é neutralizado para não conflitar (recomendado desligá-lo no widget).
+- Configurável: `load_older`, `older_batch` (TESTE: 3; produção ~15),
+  `older_trigger` (`scroll` | `button` | `both`). `has_older` calculado no boot
+  (count total > `initial_limit`) evita gatilho quando não há mais nada.
+
+### Alterado — `initial_limit` de 30 → 6 (valor de TESTE)
+Para os testes atuais. Em produção, voltar para ~30 (setting `initial_limit`).
+
+### Reforçado — render incremental fiel ao load-more nativo (bug do "primeiro item pelado")
+O `after`/`before` agora renderizam com os **widget_settings reais** do grid
+(enviados pelo cliente a partir do `data-nav`) e disparam os mesmos `do_action`
+pré-render do load-more nativo (`jet-engine/listings/ajax/load-more` +
+`.../elementor-views/ajax/load-more` com a instância do widget) — paridade total
+no enfileiramento de assets do card. No cliente: settle de 2 frames no PRIMEIRO
+append da sessão (uma única vez, sem dupla init) e log de debug dos assets do
+response (`cfg.debug`) para confirmar `scripts`/`styles`. O `listing_id` é sempre
+reimposto pelo servidor (o cliente nunca escolhe qual listing renderiza).
+
 ## 1.0.2
 
 Carregamento inicial das "últimas N mensagens" — **100% no código**, mantendo a

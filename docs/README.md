@@ -29,7 +29,7 @@ Esta pasta `docs/` é a **fonte única de verdade documental** do projeto. Ela c
 | [05 — Achados e Inconsistências](05-achados-e-inconsistencias.md) | Divergências entre o código do projeto e a raiz real dos plugins (ex.: hook inexistente) |
 | [06 — Diretrizes para a Nova Versão](06-diretrizes-nova-versao.md) | Princípios de arquitetura para reescrever o projeto integrado à raiz dos plugins, sem WPCode e sem engessar |
 | [07 — Plugin `conversa-chat`](07-plugin-conversa-chat.md) | **A nova versão implementada**: arquitetura do plugin, mapeamento nativo por necessidade, fluxo do tempo real e migração |
-| [08 — Render incremental, limpeza e performance (1.0.1 / 1.0.2)](08-render-incremental-e-performance.md) | Correções pós-teste real: assets no incremental (primeiro item "pelado"), limpeza do textarea e o carregamento inicial "últimas N mensagens" resolvido no código (hooks nativos da Query), mantendo a CCT Query |
+| [08 — Render incremental, limpeza e performance (1.0.1 → 1.0.3)](08-render-incremental-e-performance.md) | Correções pós-teste real: assets no incremental (primeiro item "pelado") + render fiel ao load-more nativo, limpeza do textarea, carregamento inicial "últimas N mensagens" via hooks nativos da Query, e o "carregar antigas" (rolar pra cima / prepend com âncora de scroll) |
 
 ---
 

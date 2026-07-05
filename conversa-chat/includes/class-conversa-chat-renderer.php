@@ -41,7 +41,7 @@ class Conversa_Chat_Renderer {
 	 *                           is_convidado via dynamic tag post-custom-field).
 	 * @return string HTML concatenado dos .jet-listing-grid__item.
 	 */
-	public static function render_items( $items, $conversa_id ) {
+	public static function render_items( $items, $conversa_id, $widget_settings = array() ) {
 
 		if ( empty( $items ) || ! function_exists( 'jet_engine' ) ) {
 			return '';
@@ -65,15 +65,48 @@ class Conversa_Chat_Renderer {
 		// Listing atual para o pipeline do JetEngine.
 		jet_engine()->listings->data->set_listing_by_id( $listing_id );
 
-		// Settings mínimos: o mesmo subconjunto que o load-more nativo usa.
+		// Settings do widget. Preferimos os REAIS do grid (publicados pelo
+		// próprio JetEngine no data-nav e enviados pelo cliente) para o render
+		// incremental ficar byte-a-byte igual ao load-more nativo — inclusive
+		// no enfileiramento de assets dos widgets do card. Sem eles, caímos no
+		// mesmo subconjunto mínimo que o load-more nativo aceita como fallback.
 		// O typo 'lisitng_id' é o nome real do setting no JetEngine
 		// (ajax-handlers.php:369) — mantido por contrato, não por descuido.
-		$settings = array(
-			'lisitng_id'     => $listing_id,
-			'columns'        => 1,
-			'columns_tablet' => 1,
-			'columns_mobile' => 1,
+		$settings = is_array( $widget_settings ) ? $widget_settings : array();
+
+		$settings = array_merge(
+			array(
+				'columns'        => 1,
+				'columns_tablet' => 1,
+				'columns_mobile' => 1,
+			),
+			$settings
 		);
+
+		// O listing_id é SEMPRE o do servidor (nunca confia no valor do cliente).
+		$settings['lisitng_id'] = $listing_id;
+
+		// Paridade com o load-more nativo (ajax-handlers.php:338-357): cria a
+		// instância do widget e dispara os mesmos do_action ANTES do render, o
+		// que dá a extensões/Elementor a chance de registrar/enfileirar os
+		// assets do card exatamente como no load-more. Sem esta etapa, o
+		// PRIMEIRO item incremental podia sair "pelado".
+		if ( jet_engine()->has_elementor() && class_exists( '\Elementor\Plugin' ) ) {
+
+			$widget = \Elementor\Plugin::$instance->elements_manager->create_element_instance( array(
+				'id'         => 'jet-listing-grid',
+				'elType'     => 'widget',
+				'settings'   => $settings,
+				'elements'   => array(),
+				'widgetType' => 'jet-listing-grid',
+			) );
+
+			if ( $widget ) {
+				do_action( 'jet-engine/elementor-views/ajax/load-more', $widget );
+			}
+		}
+
+		do_action( 'jet-engine/listings/ajax/load-more' );
 
 		$render = jet_engine()->listings->get_render_instance( 'listing-grid', $settings );
 

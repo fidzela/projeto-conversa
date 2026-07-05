@@ -59,6 +59,25 @@ respeito a assets. É o ponto onde as versões antigas empacavam (sem a raiz do
 código, tentavam clonar/estilizar à mão); aqui a fronteira volta a ser o que o
 JetEngine já faz.
 
+### Reforço (1.0.3) — quando a 1.0.1 não bastou
+Em teste real o "primeiro item pelado" **persistiu** em algum cenário. Duas
+frentes na 1.0.3, ambas aproximando o render do load-more nativo:
+
+1. **Render fiel (servidor).** `render_items` passou a usar os **widget_settings
+   reais** do grid (o cliente os envia a partir do `data-nav`) e a disparar os
+   mesmos `do_action` pré-render do nativo antes do `posts_loop`
+   (`jet-engine/listings/ajax/load-more` e
+   `jet-engine/elementor-views/ajax/load-more` com a instância do widget —
+   `ajax-handlers.php:338-357`). Isso dá a Elementor/extensões a mesma chance de
+   registrar/enfileirar os assets do card. O `listing_id` é sempre reimposto
+   pelo servidor (o cliente nunca escolhe o listing).
+2. **Settle + diagnóstico (cliente).** No **primeiro** append da sessão,
+   `initHandlersAfterAssets` espera 2 frames antes de religar (uma única vez, sem
+   dupla init) — cobre um assentamento tardio de CSS/Elementor. Com `cfg.debug`,
+   o runtime loga se o response trouxe `scripts`/`styles` e quantas
+   `assetsPromises` ficaram pendentes — é o sinal que confirma, ao vivo, se a
+   causa era assets ausentes no response ou timing.
+
 ---
 
 ## 8.2 Limpeza do textarea após envio
@@ -183,8 +202,56 @@ O `state.lastId` do runtime vem do `_ID` máximo real do CCT (via `get_status`,
 `data.php:104-116`), independente do que o Listing mostra — continua correto
 mesmo exibindo só as 30 últimas.
 
-### "Ver mensagens mais antigas" (rolar pra cima) — próximo incremento
-Fica faltando carregar as mensagens além das N ao rolar pro topo. É simétrico ao
-`after`: um passo futuro (gatilho `before` com `_ID < X` em modo "prepend", ou o
-load-more nativo — a CCT Query com `number = N` já pagina o restante em DESC).
-Não incluído na 1.0.2 para não acoplar sem teste no site.
+---
+
+## 8.4 Carregar mensagens ANTIGAS — rolar pra cima (1.0.3)
+
+### Por que o load-more nativo NÃO serve aqui
+O load-more nativo do JetEngine **anexa a próxima página no fim** do grid (feed
+que cresce pra baixo). Num chat, "carregar mais" = mensagens **antigas**, que
+precisam entrar **no topo**, com a rolagem ancorada (a mensagem que você lia não
+pode pular). Além disso, ele pagina pelo mesmo `number` da página (ex.: 6), então
+não dá pra ter "início 6, +3 por vez". Em teste real, o load-more nativo
+inseriu o lote **embaixo**, como se fossem mensagens novas — o oposto do
+esperado. Logo, "carregar antigas" é uma operação **própria** do chat: é onde o
+nativo não alcança, e o código começa aí (Regra de Ouro).
+
+### O fluxo `before` — simétrico ao `after`
+**Servidor** (`Conversa_Chat_Data::get_before` + endpoint `conversa_chat_before`):
+
+```
+_ID < before_id   ORDER BY _ID DESC   LIMIT N+1     →  as N mais recentes ABAIXO do topo
+array_slice(0, N) + has_more = (retornou N+1)         →  o +1 sonda "há mais antigas?" sem count
+array_reverse                                         →  lote em ordem cronológica (ASC) p/ prepend
+```
+
+Render pelo **mesmo** `posts_loop` (template real). O `_ID < X` lê o CCT direto
+pela Factory — **fora** do Query Builder, então os hooks de limite/ordem da 8.3
+não o afetam (o lote antigo não é re-limitado nem reinvertido).
+
+**Cliente** (`runtime.js`):
+- `prependItemsHtml` insere o lote **antes** do primeiro item atual (dedup por
+  `data-post-id`), preservando a ordem cronológica.
+- `ConversaChatLayout.anchorForPrepend(mutate)` registra a altura, executa o
+  prepend e reposiciona o `scrollTop` pela diferença — **a viewport fica parada**
+  na mesma mensagem (comportamento WhatsApp/Messenger). Reancoragem também no
+  próximo frame, caso um asset do card mude a altura logo depois.
+- Gatilho: **rolar ao topo** (`scroll` ≤ 60px) e/ou **botão** "Ver mensagens
+  anteriores" (`older_trigger`). O load-more nativo é neutralizado
+  (`neutralizeNativeLoadMore`); recomenda-se **desligar** "Load more" no widget
+  do Listing para não haver dois mecanismos.
+- Fim do histórico: `has_more` do servidor desliga o gatilho; no boot,
+  `has_older` (count total > `initial_limit`) evita a primeira carga inútil
+  quando não há nada mais antigo.
+
+### O que NÃO muda
+- `state.lastId` (tempo real) continua vindo do `_ID` máximo do CCT via
+  `get_status` — independente do que o Listing exibe.
+- O `after` (mensagem nova) segue anexando no fim + scroll pro fim.
+- Nenhuma dependência da fonte da query do Listing: `before` é uma leitura
+  direta do CCT, como o `after`.
+
+### Configuração (settings)
+`load_older` (on/off), `older_batch` (N por carga — TESTE: 3, produção ~15),
+`older_trigger` (`scroll` | `button` | `both`), `rate_before` (rate limit).
+API JS: `ConversaChatRuntime.loadOlder()`.

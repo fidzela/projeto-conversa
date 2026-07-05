@@ -50,8 +50,12 @@
 		burstTimers: [],
 		statusInFlight: false,
 		afterInFlight: false,
+		beforeInFlight: false,
 		fullInFlight: false,
 		lastId: 0,
+		oldestId: 0,
+		olderExhausted: false,
+		firstAppendDone: false,
 		knownCount: 0,
 		knownHash: ''
 	};
@@ -123,10 +127,64 @@
 		return max;
 	}
 
+	/**
+	 * Menor _ID presente no DOM — o "topo" atual, ponto de partida para
+	 * carregar as mensagens mais antigas.
+	 */
+	function getMinIdInDom() {
+		var container = getItemsContainer();
+		if ( ! container ) return 0;
+
+		var min = 0;
+		container.querySelectorAll( ':scope > .jet-listing-grid__item[data-post-id]' ).forEach( function ( el ) {
+			var id = parseInt( el.getAttribute( 'data-post-id' ), 10 ) || 0;
+			if ( id && ( min === 0 || id < min ) ) min = id;
+		} );
+		return min;
+	}
+
 	function hasItemInDom( id ) {
 		var container = getItemsContainer();
 		if ( ! container ) return false;
 		return Boolean( container.querySelector( ':scope > .jet-listing-grid__item[data-post-id="' + id + '"]' ) );
+	}
+
+	/**
+	 * data-nav que o próprio grid publica no DOM (garantido pelo filtro
+	 * add-query-data — ver Integrations). Fonte da query assinada e dos
+	 * widget_settings reais do grid.
+	 */
+	function getNav() {
+		var container = getItemsContainer();
+		if ( ! container ) return {};
+		try {
+			return JSON.parse( container.getAttribute( 'data-nav' ) || '{}' ) || {};
+		} catch ( e ) {
+			return {};
+		}
+	}
+
+	/**
+	 * widget_settings REAIS do grid, enviados ao servidor no render incremental
+	 * para paridade com o load-more nativo (mesmo enfileiramento de assets do
+	 * card). O servidor reimpõe o listing_id — o cliente não escolhe o listing.
+	 */
+	function widgetSettingsParam() {
+		var nav = getNav();
+		try {
+			return JSON.stringify( nav.widget_settings || {} );
+		} catch ( e ) {
+			return '{}';
+		}
+	}
+
+	function logAssets( label, data ) {
+		if ( ! cfg.debug ) return;
+		log( label, {
+			scripts: data && data.scripts ? Object.keys( data.scripts ) : null,
+			styles: data && data.styles ? Object.keys( data.styles ) : null,
+			pending: ( window.JetEngine && window.JetEngine.assetsPromises || [] ).length
+		} );
 	}
 
 	// ------------------------------------------------------------------
@@ -235,7 +293,7 @@
 
 		state.afterInFlight = true;
 
-		return postAjax( cfg.actions.after, { after_id: afterId } )
+		return postAjax( cfg.actions.after, { after_id: afterId, widget_settings: widgetSettingsParam() } )
 			.then( function ( data ) {
 
 				// 1. Assets ANTES do append: enqueueAssetsFromResponse injeta o
@@ -243,6 +301,7 @@
 				//    scripts (assíncrono, em JetEngine.assetsPromises). É o que
 				//    o load-more nativo faz primeiro (main.js:551).
 				enqueueAssets( data );
+				logAssets( 'after assets:', data );
 
 				// 2. Append + dedup por data-post-id (atributo nativo do grid).
 				var nodes = appendItemsHtml( data.html || '' );
@@ -252,8 +311,11 @@
 				if ( nodes.length ) {
 					// 3. Religa os widgets SÓ depois que os scripts assíncronos
 					//    carregarem (Promise.all(assetsPromises) — main.js:598).
-					//    É o que impede o "primeiro item pelado".
-					initHandlersAfterAssets( nodes );
+					//    No PRIMEIRO append da sessão, um settle extra de 2 frames
+					//    dá tempo do Elementor/CSS assentarem (sem dupla init) —
+					//    reforço contra o "primeiro item pelado".
+					initHandlersAfterAssets( nodes, ! state.firstAppendDone );
+					state.firstAppendDone = true;
 
 					markActive( 'messages-appended' );
 					emit( 'conversa-chat:messages-appended', {
@@ -313,6 +375,114 @@
 	}
 
 	/**
+	 * Insere itens no TOPO do grid (mensagens antigas), preservando a ordem
+	 * cronológica (o lote já vem ASC do servidor). Dedup por data-post-id.
+	 * Não toca no scroll — a ancoragem é responsabilidade de quem chama
+	 * (ConversaChatLayout.anchorForPrepend), que mantém a viewport parada.
+	 */
+	function prependItemsHtml( html ) {
+		var container = getItemsContainer();
+
+		html = String( html || '' ).trim();
+
+		if ( ! container || ! html ) return [];
+
+		var tpl = document.createElement( 'template' );
+		tpl.innerHTML = html;
+
+		var items = tpl.content.querySelectorAll( '.jet-listing-grid__item' );
+		var prependedNodes = [];
+
+		// Âncora fixa: todos entram ANTES do primeiro item atual, na ordem do
+		// lote (ASC) → resultado: [lote antigo] + [itens já visíveis].
+		var firstItem = container.querySelector( ':scope > .jet-listing-grid__item' );
+
+		items.forEach( function ( item ) {
+			var id = parseInt( item.getAttribute( 'data-post-id' ), 10 ) || 0;
+
+			if ( id && hasItemInDom( id ) ) return; // dedup pelo atributo nativo
+
+			container.insertBefore( item, firstItem );
+			prependedNodes.push( item );
+
+			if ( id && ( state.oldestId === 0 || id < state.oldestId ) ) {
+				state.oldestId = id;
+			}
+		} );
+
+		return prependedNodes;
+	}
+
+	// ------------------------------------------------------------------
+	// Carregar mensagens ANTIGAS (rolar pra cima / botão "ver anteriores")
+	// ------------------------------------------------------------------
+
+	function fetchBefore( reason ) {
+		if ( ! cfg.load_older || state.beforeInFlight || state.olderExhausted ) {
+			return Promise.resolve( false );
+		}
+		if ( state.pauseUntil && Date.now() < state.pauseUntil ) return Promise.resolve( false );
+
+		var beforeId = state.oldestId || getMinIdInDom();
+
+		if ( ! beforeId || beforeId <= 1 ) {
+			state.olderExhausted = true;
+			updateOlderUI();
+			return Promise.resolve( false );
+		}
+
+		state.beforeInFlight = true;
+		setOlderLoading( true );
+
+		return postAjax( cfg.actions.before, { before_id: beforeId, widget_settings: widgetSettingsParam() } )
+			.then( function ( data ) {
+
+				enqueueAssets( data );
+				logAssets( 'before assets:', data );
+
+				// Prepend ANCORADO: a mensagem que o usuário lia não se move.
+				var nodes = [];
+				var doPrepend = function () { nodes = prependItemsHtml( data.html || '' ); };
+
+				if ( window.ConversaChatLayout && typeof window.ConversaChatLayout.anchorForPrepend === 'function' ) {
+					window.ConversaChatLayout.anchorForPrepend( doPrepend );
+				} else {
+					doPrepend();
+				}
+
+				// Novo topo + fim do histórico.
+				if ( data.oldest_id ) {
+					state.oldestId = parseInt( data.oldest_id, 10 ) || state.oldestId;
+				} else {
+					state.oldestId = getMinIdInDom();
+				}
+				state.olderExhausted = ! data.has_more;
+
+				if ( nodes.length ) {
+					initHandlersAfterAssets( nodes, ! state.firstAppendDone );
+					state.firstAppendDone = true;
+					emit( 'conversa-chat:messages-prepended', {
+						reason: reason || 'before',
+						prepended: nodes.length,
+						hasMore: ! state.olderExhausted
+					} );
+				}
+
+				updateOlderUI();
+				return true;
+			} )
+			.catch( function ( err ) {
+				pauseIf429( err );
+				log( 'before fail:', err );
+				return false;
+			} )
+			.finally( function () {
+				state.beforeInFlight = false;
+				setOlderLoading( false );
+			} );
+	}
+
+	/**
 	 * Injeta os assets (CSS/JS de widget) que o servidor devolveu no response,
 	 * usando a MESMA API do load-more nativo: CSS vai pro <head> na hora,
 	 * scripts entram assíncronos e ficam em JetEngine.assetsPromises. Dedup
@@ -351,7 +521,7 @@
 	 * widget ainda não terminou de carregar quando o init roda; a partir do
 	 * segundo ele já está na página, por isso "os próximos montam certo".
 	 */
-	function initHandlersAfterAssets( nodes ) {
+	function initHandlersAfterAssets( nodes, settle ) {
 		if ( ! window.JetEngine || ! window.jQuery ) {
 			initHandlers( nodes );
 			return;
@@ -360,9 +530,21 @@
 		var promises = window.JetEngine.assetsPromises || [];
 
 		Promise.resolve( Promise.all( promises ) ).then( function () {
-			initHandlers( nodes );
 			if ( window.JetEngine ) {
 				window.JetEngine.assetsPromises = [];
+			}
+
+			if ( settle ) {
+				// Espera 2 frames antes de religar (UMA única vez, sem dupla
+				// init): dá tempo do Elementor/CSS assentarem no primeiro
+				// append da sessão — reforço contra o "primeiro item pelado".
+				window.requestAnimationFrame( function () {
+					window.requestAnimationFrame( function () {
+						initHandlers( nodes );
+					} );
+				} );
+			} else {
+				initHandlers( nodes );
 			}
 		} );
 	}
@@ -685,6 +867,104 @@
 	}
 
 	// ------------------------------------------------------------------
+	// UI de "carregar antigas" (botão + scroll-to-top) e neutralização do
+	// load-more NATIVO (que anexa no FIM — errado para chat).
+	// ------------------------------------------------------------------
+
+	var olderControl = null;
+	var olderButton = null;
+
+	function wantsButton() {
+		return cfg.load_older && ( cfg.older_trigger === 'button' || cfg.older_trigger === 'both' );
+	}
+
+	function wantsScroll() {
+		return cfg.load_older && ( cfg.older_trigger === 'scroll' || cfg.older_trigger === 'both' );
+	}
+
+	function ensureOlderControl() {
+		if ( ! wantsButton() || olderControl ) return olderControl;
+
+		var messages = document.querySelector( cfg.selectors.messages );
+		if ( ! messages ) return null;
+
+		olderControl = document.createElement( 'div' );
+		olderControl.className = 'conversa-chat-older';
+
+		olderButton = document.createElement( 'button' );
+		olderButton.type = 'button';
+		olderButton.className = 'conversa-chat-older__button';
+		olderButton.textContent = ( cfg.i18n && cfg.i18n.load_older ) || 'Ver mensagens anteriores';
+		olderButton.addEventListener( 'click', function () { fetchBefore( 'button' ); } );
+
+		olderControl.appendChild( olderButton );
+
+		// Acima do grid, dentro da área rolável das mensagens.
+		messages.insertBefore( olderControl, messages.firstChild );
+
+		return olderControl;
+	}
+
+	function updateOlderUI() {
+		if ( ! olderControl ) return;
+		olderControl.hidden = Boolean( state.olderExhausted );
+	}
+
+	function setOlderLoading( loading ) {
+		if ( ! olderButton ) return;
+		olderButton.disabled = Boolean( loading );
+		olderButton.textContent = loading
+			? ( ( cfg.i18n && cfg.i18n.loading_older ) || 'Carregando…' )
+			: ( ( cfg.i18n && cfg.i18n.load_older ) || 'Ver mensagens anteriores' );
+	}
+
+	function bindOlderScroll() {
+		if ( ! wantsScroll() ) return;
+
+		var messages = document.querySelector( cfg.selectors.messages );
+		if ( ! messages ) return;
+
+		var TOP_THRESHOLD_PX = 60;
+
+		messages.addEventListener( 'scroll', function () {
+			if ( state.beforeInFlight || state.olderExhausted ) return;
+			if ( messages.scrollTop <= TOP_THRESHOLD_PX ) {
+				fetchBefore( 'scroll-top' );
+			}
+		}, { passive: true } );
+	}
+
+	/**
+	 * Esconde o load-more NATIVO do grid: ele anexa a próxima página no FIM
+	 * (feed que cresce pra baixo), o oposto do que um chat quer. Aqui o
+	 * histórico é carregado pra cima (prepend). Inofensivo se o load-more
+	 * nativo estiver desligado no widget.
+	 */
+	function neutralizeNativeLoadMore() {
+		if ( ! cfg.load_older ) return;
+
+		var gridRoot = getGridRoot();
+		if ( ! gridRoot ) return;
+
+		gridRoot.querySelectorAll( '.jet-listing-grid__loadmore, .jet-listing-load-more' ).forEach( function ( el ) {
+			el.style.display = 'none';
+		} );
+	}
+
+	function setupOlder() {
+		if ( ! cfg.load_older ) return;
+
+		state.oldestId = getMinIdInDom();
+		// has_older vem do servidor no boot (count total > initial_limit).
+		state.olderExhausted = ! cfg.has_older;
+
+		neutralizeNativeLoadMore();
+		ensureOlderControl();
+		bindOlderScroll();
+		updateOlderUI();
+	}
+
+	// ------------------------------------------------------------------
 	// Eventos de página/form
 	// ------------------------------------------------------------------
 
@@ -792,14 +1072,16 @@
 		state.lastId = Math.max( parseInt( initial.last_id, 10 ) || 0, getMaxIdInDom() );
 
 		bindEvents();
+		setupOlder();
 		checkOwnership( 'boot' );
 		startLockMonitor();
 
 		window.ConversaChatRuntime = {
 			booted: true,
-			version: '1.0.1',
+			version: '1.0.3',
 			checkStatus: checkStatus,
 			refreshFull: function () { return fullRefresh( 'manual' ); },
+			loadOlder: function () { return fetchBefore( 'manual' ); },
 			isPrimary: function () { return state.isPrimary; },
 			takeOver: takeOver,
 			getState: function () {
@@ -807,6 +1089,8 @@
 					mode: state.mode,
 					isPrimary: state.isPrimary,
 					lastId: state.lastId,
+					oldestId: state.oldestId,
+					olderExhausted: state.olderExhausted,
 					knownCount: state.knownCount,
 					knownHash: state.knownHash
 				};
