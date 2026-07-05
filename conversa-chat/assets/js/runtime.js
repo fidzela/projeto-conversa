@@ -1122,7 +1122,7 @@
 
 		window.ConversaChatRuntime = {
 			booted: true,
-			version: '1.0.4',
+			version: '1.1.0',
 			checkStatus: checkStatus,
 			refreshFull: function () { return fullRefresh( 'manual' ); },
 			loadOlder: function () { return fetchBefore( 'manual' ); },

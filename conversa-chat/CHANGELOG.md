@@ -2,6 +2,50 @@
 
 Formato: cada versão finalizada gera `dist/conversa-chat-{versao}.zip`.
 
+## 1.1.0
+
+Correções de UX do composer + **módulo de mídia** (enviar imagem na mensagem)
++ registro de **layouts** de composer. Detalhes em
+[`docs/10-composer-midia-e-layouts.md`](../docs/10-composer-midia-e-layouts.md).
+
+### Corrigido — composer (o que foi pedido primeiro)
+- **Auto-grow sem "desce e sobe":** o textarea passava por baixo do botão e
+  oscilava até fechar a 1ª linha. Causa: a expansão trocava a reserva lateral do
+  botão (mudava a largura útil) e a medição batia em larguras diferentes a cada
+  tecla. Agora a expansão é **sticky** (só reverte ao esvaziar) e a altura é
+  medida em **duas etapas** (na largura final). O botão fica fixo.
+- **Sem o balão nativo de required** ("Preencha este campo"): suprimido via
+  `invalid` + `preventDefault` — mantém a obrigatoriedade, tira só o popup feio.
+- **Status só em erro:** o JetFormBuilder emite mensagem `--success`/`--error`
+  (`form-messages/builder.php:73-74`). O sucesso é redundante no chat (a mensagem
+  já aparece pela lista) → escondido; o **erro** aparece como aviso discreto
+  acima do composer.
+
+### Adicionado — módulo de mídia (metafield `message_image`)
+- A mensagem pode levar **imagem** além do texto. A **exibição** já vinha de
+  graça (o card do Listing mostra a coluna; o render incremental usa o template
+  real — trocar o layout do card não quebrou o real-time).
+- O **envio** usa o **Media Field NATIVO do JetFormBuilder**
+  (`templates/fields/media-field.php`). O plugin só **reveste** o campo, no
+  estilo da referência: input file vira o botão **`+`** (barra inferior
+  esquerda, sem microfone), a lista de previews vira miniaturas **50×50
+  `object-fit: cover`** e o `.__file-remove` nativo vira um **X** no canto.
+  Nada de uploader/preview/exclusão recriados — tudo é do JFB
+  (`image-preview.php` + `media.field.js`).
+- Feature-detect: o revestimento liga sozinho quando um form com Media Field
+  entra na página (`composer.js::wireMedia`).
+
+### Adicionado — layouts de composer (armazenados; base para o futuro)
+- `composer_layouts` (texto / texto+mídia) + `default_layout` (`media`) +
+  `composer_forms()` unindo layouts e `form_ids`. Separar/duplicar o composer é
+  **configuração**, não código (não engessa). O form atual **não foi alterado**.
+- `default_layout => 'media'`. Para o form de mídia virar padrão de fato, basta
+  informar o `form_id` do form duplicado (via `conversa-chat/settings`).
+
+### Verificado
+- Render do composer (CSS do plugin sobre o **DOM nativo** do Media Field) nos
+  quatro estados: texto vazio/expandido e mídia sem/com anexos.
+
 ## 1.0.4
 
 Desfecho do bug do "primeiro item pelado", remoção do lixo das tentativas que não

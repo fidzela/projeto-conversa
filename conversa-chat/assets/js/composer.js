@@ -119,17 +119,24 @@
 		var ta = cache.textarea;
 		if ( ! ta ) return;
 
-		var value = String( ta.value || '' );
-		var empty = value.trim().length === 0;
+		var value     = String( ta.value || '' );
+		var textEmpty = value.trim().length === 0;
+
+		// No layout de mídia, uma imagem anexada conta como conteúdo: o botão
+		// não fica "cinza" (permite enviar só imagem, se o form permitir texto
+		// vazio). O tamanho do textarea segue guiado só pelo texto.
+		var hasPreview = form.classList.contains( 'conversa-composer-has-previews' );
+		var empty      = textEmpty && ! hasPreview;
 
 		var minH = getCssNumber( ta, '--conversa-composer-textarea-min-height', 34 );
 		var maxH = getCssNumber( ta, '--conversa-composer-textarea-max-height', 168 );
 
-		// 1) Decide o estado medindo na largura ATUAL. Expansão é sticky.
+		// 1) Decide o estado medindo na largura ATUAL. Expansão é sticky e é
+		//    guiada pelo TEXTO (a mídia não expande o textarea).
 		ta.style.height = 'auto';
 		var wasExpanded = form.classList.contains( 'conversa-composer-is-expanded' );
 		var needsExpand = value.indexOf( '\n' ) !== -1 || ta.scrollHeight > minH + 8;
-		var expanded    = ! empty && ( wasExpanded || needsExpand );
+		var expanded    = ! textEmpty && ( wasExpanded || needsExpand );
 
 		form.classList.toggle( 'conversa-composer-is-expanded', expanded );
 		form.classList.toggle( 'conversa-composer-is-empty', empty );
@@ -138,9 +145,9 @@
 		//    acima pode ter mudado a reserva lateral → a largura útil). Sem esta
 		//    segunda medição o scrollHeight referencia a largura antiga.
 		ta.style.height = 'auto';
-		var next = empty ? minH : Math.max( minH, Math.min( ta.scrollHeight, maxH ) );
+		var next = textEmpty ? minH : Math.max( minH, Math.min( ta.scrollHeight, maxH ) );
 		ta.style.height = next + 'px';
-		ta.style.overflowY = ( ! empty && ta.scrollHeight > maxH ) ? 'auto' : 'hidden';
+		ta.style.overflowY = ( ! textEmpty && ta.scrollHeight > maxH ) ? 'auto' : 'hidden';
 
 		if ( window.ConversaChatLayout && window.ConversaChatLayout.scrollOnComposerExpand ) {
 			window.ConversaChatLayout.scrollOnComposerExpand();

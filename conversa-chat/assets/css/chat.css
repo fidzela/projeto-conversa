@@ -402,6 +402,207 @@ form.conversa-chat-composer .jet-form-builder__action-button[disabled] {
 }
 
 /* ==========================================================================
+   2b. Composer com MÍDIA (anexo de imagem) — revestimento do Media Field
+   --------------------------------------------------------------------------
+   Gate: .conversa-composer-has-media (composer.js detecta o campo de upload
+   NATIVO do JFB, .jet-form-builder-file-upload). Estrutura à la referência:
+   previews no TOPO, texto no meio (largura total), barra inferior com o botão
+   [+] à esquerda e [enviar] à direita — sem microfone.
+
+   REGRA DE OURO: nada aqui recria uploader/preview/exclusão. O input file, a
+   miniatura (.__file > img), o botão de excluir (.__file-remove) e o upload são
+   100% do JetFormBuilder (media-field.php + image-preview.php + media.field.js).
+   Só posicionamos e vestimos. Os filhos-chave (previews e o +) são posicionados
+   em ABSOLUTO relativo ao <form> (position: relative) — por isso neutralizamos
+   position/margin dos wrappers intermediários, para o absoluto resolver no form
+   independentemente da profundidade do markup do bloco.
+   ========================================================================== */
+
+/* Barra inferior sempre reservada (dois botões); topo reservado só quando há
+   mídia anexada. O texto usa a largura total (a barra fica ABAIXO dele). */
+form.conversa-chat-composer.conversa-composer-has-media,
+form.conversa-chat-composer.conversa-composer-has-media.conversa-composer-is-expanded {
+	padding:
+		12px
+		var(--conversa-composer-x-padding)
+		var(--conversa-composer-bottom-step)
+		var(--conversa-composer-x-padding) !important;
+}
+
+form.conversa-chat-composer.conversa-composer-has-media.conversa-composer-has-previews {
+	padding-top: 68px !important; /* 50 (thumb) + respiro */
+}
+
+/* Neutraliza os wrappers do Media Field para o absoluto resolver no <form>. */
+form.conversa-composer-has-media .field-type-media-field,
+form.conversa-composer-has-media .jet-form-builder-file-upload,
+form.conversa-composer-has-media .jet-form-builder-file-upload__content {
+	position: static !important;
+	margin: 0 !important;
+	padding: 0 !important;
+	border: 0 !important;
+	background: none !important;
+	min-height: 0 !important;
+}
+
+/* Tira a poluição do campo no fluxo do chat (dica de tamanho e loader). */
+form.conversa-composer-has-media .jet-form-builder-file-upload__message,
+form.conversa-composer-has-media .jet-form-builder-file-upload__loader {
+	display: none !important;
+}
+
+/* ---- Régua de previews (topo) ---- */
+form.conversa-composer-has-media .jet-form-builder-file-upload__files {
+	position: absolute !important;
+	left: var(--conversa-composer-x-padding) !important;
+	right: var(--conversa-composer-x-padding) !important;
+	top: 12px !important;
+	display: flex !important;
+	flex-wrap: wrap !important;
+	gap: 8px !important;
+	margin: 0 !important;
+	padding: 0 !important;
+	list-style: none !important;
+	z-index: 4 !important;
+}
+
+/* Miniatura 50x50 object-fit cover. O <img> nativo vem com width/height=100px
+   inline; o CSS (cascata) vence os atributos de apresentação. */
+form.conversa-composer-has-media .jet-form-builder-file-upload__file {
+	position: relative !important;
+	width: 50px !important;
+	height: 50px !important;
+	margin: 0 !important;
+	padding: 0 !important;
+	border-radius: 10px !important;
+	overflow: hidden !important;
+	background: #f3f4f6 !important;
+	border: 1px solid #e5e7eb !important;
+	box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06) !important;
+	flex: 0 0 auto !important;
+}
+
+form.conversa-composer-has-media .jet-form-builder-file-upload__file img {
+	display: block !important;
+	width: 100% !important;
+	height: 100% !important;
+	object-fit: cover !important;
+	margin: 0 !important;
+	border-radius: 0 !important;
+}
+
+/* Botão excluir (canto sup. direito) — usa o próprio .__file-remove do JFB,
+   mas troca o ícone nativo (lixeira) por um X em círculo, como na referência. */
+form.conversa-composer-has-media .jet-form-builder-file-upload__file-remove {
+	position: absolute !important;
+	top: 3px !important;
+	right: 3px !important;
+	display: flex !important;
+	align-items: center !important;
+	justify-content: center !important;
+	width: 18px !important;
+	height: 18px !important;
+	margin: 0 !important;
+	padding: 0 !important;
+	border: 0 !important;
+	border-radius: 999px !important;
+	background: rgba(17, 24, 39, 0.72) !important;
+	color: #fff !important;
+	cursor: pointer !important;
+	z-index: 2 !important;
+	line-height: 0 !important;
+	transition: background-color 140ms ease !important;
+}
+
+form.conversa-composer-has-media .jet-form-builder-file-upload__file-remove:hover {
+	background: #111827 !important;
+}
+
+/* Esconde o SVG nativo (lixeira) e desenha o X. */
+form.conversa-composer-has-media .jet-form-builder-file-upload__file-remove svg {
+	display: none !important;
+}
+
+form.conversa-composer-has-media .jet-form-builder-file-upload__file-remove::before {
+	content: "" !important;
+	display: block !important;
+	width: 10px !important;
+	height: 10px !important;
+	background: currentColor !important;
+	-webkit-mask: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2024%2024'%3E%3Cpath%20d='M6.4%205L5%206.4%2010.6%2012%205%2017.6%206.4%2019%2012%2013.4%2017.6%2019%2019%2017.6%2013.4%2012%2019%206.4%2017.6%205%2012%2010.6z'/%3E%3C/svg%3E") center / contain no-repeat !important;
+	        mask: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2024%2024'%3E%3Cpath%20d='M6.4%205L5%206.4%2010.6%2012%205%2017.6%206.4%2019%2012%2013.4%2017.6%2019%2019%2017.6%2013.4%2012%2019%206.4%2017.6%205%2012%2010.6z'/%3E%3C/svg%3E") center / contain no-repeat !important;
+}
+
+/* ---- Botão ANEXAR (+) na barra inferior, à esquerda ----
+   É o próprio wrapper do input file nativo (.__fields). O input cobre o botão
+   de forma transparente: clicar em qualquer ponto abre o seletor de arquivo. */
+form.conversa-composer-has-media .jet-form-builder-file-upload__fields {
+	position: absolute !important;
+	left: var(--conversa-composer-button-gap) !important;
+	bottom: var(--conversa-composer-button-gap) !important;
+	width: var(--conversa-composer-button-size) !important;
+	height: var(--conversa-composer-button-size) !important;
+	margin: 0 !important;
+	padding: 0 !important;
+	border-radius: 999px !important;
+	background: #f3f4f6 !important;
+	overflow: hidden !important;
+	z-index: 5 !important;
+	transition: background-color 160ms ease !important;
+}
+
+form.conversa-composer-has-media .jet-form-builder-file-upload__fields:hover {
+	background: #e5e7eb !important;
+}
+
+form.conversa-composer-has-media .jet-form-builder-file-upload__fields::before {
+	content: "" !important;
+	position: absolute !important;
+	top: 50% !important;
+	left: 50% !important;
+	width: 20px !important;
+	height: 20px !important;
+	background: #4b5563 !important;
+	transform: translate(-50%, -50%) !important;
+	pointer-events: none !important;
+	-webkit-mask: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2024%2024'%3E%3Cpath%20d='M11%205h2v6h6v2h-6v6h-2v-6H5v-2h6z'/%3E%3C/svg%3E") center / contain no-repeat !important;
+	        mask: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2024%2024'%3E%3Cpath%20d='M11%205h2v6h6v2h-6v6h-2v-6H5v-2h6z'/%3E%3C/svg%3E") center / contain no-repeat !important;
+}
+
+form.conversa-composer-has-media .jet-form-builder-file-upload__input {
+	position: absolute !important;
+	inset: 0 !important;
+	width: 100% !important;
+	height: 100% !important;
+	min-height: 0 !important;
+	margin: 0 !important;
+	padding: 0 !important;
+	border: 0 !important;
+	opacity: 0 !important;
+	cursor: pointer !important;
+	font-size: 0 !important;
+	color: transparent !important;
+}
+
+form.conversa-composer-has-media .jet-form-builder-file-upload__input::-webkit-file-upload-button {
+	display: none !important;
+}
+form.conversa-composer-has-media .jet-form-builder-file-upload__input::file-selector-button {
+	display: none !important;
+}
+
+/* Erros de arquivo do JFB (tamanho/extensão): discretos, não somem — é a
+   política "avisar só em problema". */
+form.conversa-composer-has-media .jet-form-builder-file-upload__errors {
+	margin: 6px 0 0 !important;
+	color: #b91c1c !important;
+	font-size: 12px !important;
+}
+form.conversa-composer-has-media .jet-form-builder-file-upload__errors.is-hidden {
+	display: none !important;
+}
+
+/* ==========================================================================
    3. Aviso de aba secundária (tab lock)
    ========================================================================== */
 

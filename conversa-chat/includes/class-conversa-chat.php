@@ -68,7 +68,51 @@ class Conversa_Chat {
 
 			// --- Instâncias do site (Elementor/JetEngine/JFB) --------------------
 			'listing_id'      => 56326,           // Listing Grid das mensagens
-			'form_ids'        => array( 56386 ),  // forms JetFormBuilder do composer
+			'form_ids'        => array( 56386 ),  // forms JetFormBuilder do composer (legado/compat)
+
+			// --- Mídia nas mensagens (metafield message_image no CCT) ------------
+			// Coluna do CCT que guarda o anexo de imagem da mensagem. O envio é
+			// feito por um Media Field NATIVO do JetFormBuilder mapeado para esta
+			// coluna na Action "Insert/Update CCT"; a exibição vem do próprio card
+			// do Listing (imagem dinâmica da coluna). O plugin não cria uploader
+			// nem coluna: só reconhece este nome. '' = sem suporte a mídia.
+			'message_image_field' => 'message_image',
+
+			// --- Layouts de composer (ARMAZENADOS; base para o futuro) -----------
+			// O plugin guarda "layouts" de formulário do composer. Cada layout
+			// aponta para um form JetFormBuilder (form_id) e declara suas features.
+			// Isso cumpre o pedido de separar layouts SEM engessar: trocar/duplicar
+			// o composer é configuração (novo form_id + features), não código.
+			//
+			//   - 'text'  → o composer atual (só texto). NÃO é alterado.
+			//   - 'media' → cópia do módulo de envio + Media Field (imagem). É o
+			//               padrão ('default_layout' => 'media'). O autor duplica
+			//               o form no JFB, adiciona um Media Field mapeado para
+			//               'message_image' e informa o form_id aqui.
+			//
+			// 'form_id' => 0 significa "ainda não informado": o layout fica
+			// registrado (visível para o futuro) mas inerte até receber um ID > 0.
+			// O layout de mídia é feature-detectado no cliente pela presença do
+			// campo nativo .jet-form-builder-file-upload — então o revestimento
+			// visual (+ / previews) funciona assim que o form com Media Field
+			// entra na página, independente do ID.
+			'composer_layouts' => array(
+				'text'  => array(
+					'label'   => 'Texto',
+					'form_id' => 56386,
+					'media'   => false,
+				),
+				'media' => array(
+					'label'       => 'Texto + mídia',
+					'form_id'     => 0,
+					'media'       => true,
+					'media_field' => 'message_image',
+				),
+			),
+			// Layout recomendado/ativo por padrão. Informação de intenção (o autor
+			// escolhe no Elementor qual form renderiza); o runtime reconhece todos
+			// os forms dos layouts configurados.
+			'default_layout' => 'media',
 
 			// --- Âncoras de UI (definidas NO ELEMENTOR, via _element_id) ---------
 			// O plugin nunca cria essas seções: ele apenas as reconhece.
@@ -149,6 +193,56 @@ class Conversa_Chat {
 	public function setting( $key, $default = null ) {
 		$settings = $this->settings();
 		return array_key_exists( $key, $settings ) ? $settings[ $key ] : $default;
+	}
+
+	/**
+	 * Mapa dos forms do composer com suas features.
+	 *
+	 * Une, por form_id, o registro de layouts ('composer_layouts', fonte de
+	 * verdade das features) com a lista legada 'form_ids' (tratada como texto,
+	 * para compat). Chave = form_id (int > 0). Valor:
+	 *   [ 'layout' => slug, 'media' => bool, 'media_field' => string ].
+	 *
+	 * É o que o runtime usa para (a) reconhecer QUAIS forms são o composer do
+	 * chat e (b) saber quais têm mídia. Filtro: conversa-chat/composer-forms.
+	 *
+	 * @return array<int, array>
+	 */
+	public function composer_forms() {
+
+		$forms = array();
+
+		foreach ( (array) $this->setting( 'composer_layouts', array() ) as $key => $layout ) {
+
+			$fid = isset( $layout['form_id'] ) ? (int) $layout['form_id'] : 0;
+
+			if ( $fid < 1 ) {
+				continue; // layout registrado mas ainda sem form (inerte).
+			}
+
+			$forms[ $fid ] = array(
+				'layout'      => (string) $key,
+				'media'       => ! empty( $layout['media'] ),
+				'media_field' => isset( $layout['media_field'] ) ? (string) $layout['media_field'] : '',
+			);
+		}
+
+		// Compat: form_ids explícitos ainda são reconhecidos (como texto) se
+		// nenhum layout já os cobrir.
+		foreach ( (array) $this->setting( 'form_ids', array() ) as $fid ) {
+
+			$fid = (int) $fid;
+
+			if ( $fid > 0 && ! isset( $forms[ $fid ] ) ) {
+				$forms[ $fid ] = array(
+					'layout'      => 'text',
+					'media'       => false,
+					'media_field' => '',
+				);
+			}
+		}
+
+		return apply_filters( 'conversa-chat/composer-forms', $forms );
 	}
 
 	/**
