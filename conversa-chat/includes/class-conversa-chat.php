@@ -148,6 +148,21 @@ class Conversa_Chat {
 		require_once CONVERSA_CHAT_PATH . 'includes/class-conversa-chat-integrations.php';
 		require_once CONVERSA_CHAT_PATH . 'includes/class-conversa-chat-assets.php';
 
+		// TIMING CRÍTICO: o JetEngine carrega os módulos (incluindo o CCT) só
+		// no hook `init`, prioridade -999 (jet-engine.php:164 → init() →
+		// require modules-manager). Portanto a classe
+		// \Jet_Engine\Modules\Custom_Content_Types\Module NÃO existe no
+		// plugins_loaded. Se checássemos dependência aqui, has_dependencies()
+		// falharia sempre e o plugin não faria nada no front (bug real da v1.0.0).
+		// O wiring roda no `init` (prioridade 20 > -999), quando o CCT já existe.
+		add_action( 'init', array( $this, 'init_modules' ), 20 );
+	}
+
+	/**
+	 * Wiring dos módulos. Roda no `init` (prio 20), depois do JetEngine (-999).
+	 */
+	public function init_modules() {
+
 		if ( ! $this->has_dependencies() ) {
 			add_action( 'admin_notices', array( $this, 'dependency_notice' ) );
 			return;
