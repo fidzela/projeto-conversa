@@ -11,6 +11,15 @@
  *             (user-journey/module.php:594-602) usados apenas pra re-medir
  *             o textarea depois que o JFB fez o trabalho dele.
  *
+ * Também (ainda SÓ UX, sem tocar no envio do JFB):
+ *  - suprime o balão nativo de validação do browser ("Preencha este campo") —
+ *    mantém a obrigatoriedade, tira só o popup feio (suppressNativeValidation);
+ *  - detecta o campo de MÍDIA nativo do JFB (.jet-form-builder-file-upload) e
+ *    liga o layout de anexo (+ / previews). O upload, a miniatura e o excluir
+ *    são 100% do JFB (media-field.php + media.field.js); aqui só estilizamos.
+ *  A mensagem de status "só em erro" é puramente CSS (esconde --success,
+ *  revela --error) — ver chat.css §2.
+ *
  * Regras de ouro preservadas da versão anterior (lições reais de produção):
  *  - NUNCA forçar display no <form>;
  *  - NUNCA colapsar wrapper que contenha textarea/input/select;
@@ -90,6 +99,22 @@
 		return Number.isFinite( v ) && v > 0 ? v : fallback;
 	}
 
+	/**
+	 * Auto-size do textarea — SEM o "desce e sobe" (bug reportado).
+	 *
+	 * O bug: quando o texto da 1ª linha chegava perto do botão, ele passava
+	 * "por baixo" e o campo oscilava. Causa raiz: a classe .is-expanded troca a
+	 * reserva lateral do botão por reserva no rodapé — ou seja, muda a LARGURA
+	 * útil do textarea. Medir o scrollHeight numa largura e renderizar noutra
+	 * fazia a linha ora quebrar ora não a cada tecla → oscilação.
+	 *
+	 * Correção em duas frentes:
+	 *  1) Expansão STICKY: uma vez expandido, permanece até o campo esvaziar.
+	 *     Elimina o vai-e-volta no limiar de quebra da 1ª linha.
+	 *  2) Dupla medição: decide o estado, aplica a classe (que define a largura
+	 *     FINAL) e só então mede a altura — o scrollHeight passa a bater com a
+	 *     largura real. O botão fica fixo e o texto "sobe" sem atropelar nada.
+	 */
 	function autoSize( form, cache ) {
 		var ta = cache.textarea;
 		if ( ! ta ) return;
@@ -97,23 +122,25 @@
 		var value = String( ta.value || '' );
 		var empty = value.trim().length === 0;
 
-		ta.style.height = 'auto';
-
 		var minH = getCssNumber( ta, '--conversa-composer-textarea-min-height', 34 );
 		var maxH = getCssNumber( ta, '--conversa-composer-textarea-max-height', 168 );
 
-		var next = minH;
-		if ( ! empty ) {
-			next = Math.max( minH, Math.min( ta.scrollHeight, maxH ) );
-		}
-
-		ta.style.height = next + 'px';
-		ta.style.overflowY = ( ! empty && ta.scrollHeight > maxH ) ? 'auto' : 'hidden';
-
-		var expanded = ! empty && ( value.indexOf( '\n' ) !== -1 || ta.scrollHeight > minH + 8 );
+		// 1) Decide o estado medindo na largura ATUAL. Expansão é sticky.
+		ta.style.height = 'auto';
+		var wasExpanded = form.classList.contains( 'conversa-composer-is-expanded' );
+		var needsExpand = value.indexOf( '\n' ) !== -1 || ta.scrollHeight > minH + 8;
+		var expanded    = ! empty && ( wasExpanded || needsExpand );
 
 		form.classList.toggle( 'conversa-composer-is-expanded', expanded );
 		form.classList.toggle( 'conversa-composer-is-empty', empty );
+
+		// 2) Mede a ALTURA já na largura FINAL do estado escolhido (a classe
+		//    acima pode ter mudado a reserva lateral → a largura útil). Sem esta
+		//    segunda medição o scrollHeight referencia a largura antiga.
+		ta.style.height = 'auto';
+		var next = empty ? minH : Math.max( minH, Math.min( ta.scrollHeight, maxH ) );
+		ta.style.height = next + 'px';
+		ta.style.overflowY = ( ! empty && ta.scrollHeight > maxH ) ? 'auto' : 'hidden';
 
 		if ( window.ConversaChatLayout && window.ConversaChatLayout.scrollOnComposerExpand ) {
 			window.ConversaChatLayout.scrollOnComposerExpand();
@@ -191,6 +218,9 @@
 		var host = getSubmitHost( cache.submit, form );
 		if ( host ) host.classList.add( 'conversa-composer-submit-row' );
 
+		suppressNativeValidation( form );
+		wireMedia( form );
+
 		cache.textarea.addEventListener( 'input', function () {
 			scheduleAutoSize( form );
 		} );
@@ -202,6 +232,57 @@
 		} );
 
 		autoSize( form, cache );
+	}
+
+	/**
+	 * Suprime o balão nativo do browser ("Preencha este campo") — feio.
+	 *
+	 * NÃO remove a obrigatoriedade do campo: o form inválido continua sem
+	 * enviar (o botão fica cinza no estado vazio), apenas sem o popup nativo.
+	 * Captura na fase de captura para pegar o evento antes do default do
+	 * browser (que mostraria o balão). Idempotente por form.
+	 */
+	function suppressNativeValidation( form ) {
+		if ( form.dataset.conversaNoValidateBubble === '1' ) return;
+		form.dataset.conversaNoValidateBubble = '1';
+
+		form.addEventListener( 'invalid', function ( e ) {
+			e.preventDefault();
+		}, true );
+	}
+
+	/**
+	 * Layout de MÍDIA — detecta o campo de upload NATIVO do JetFormBuilder
+	 * (.jet-form-builder-file-upload, media-field.php) e liga o revestimento
+	 * visual: o input file vira o botão "anexar" (+) e a área de previews
+	 * (.jet-form-builder-file-upload__files) vira a régua de miniaturas.
+	 *
+	 * Regra de Ouro: o plugin NÃO cria uploader nem previews — quem faz upload,
+	 * mostra miniatura e exclui (.__file-remove) é o próprio JFB. Aqui só:
+	 *  - marca .conversa-composer-has-media (o CSS aplica o layout do +/toolbar);
+	 *  - observa a lista de previews p/ .conversa-composer-has-previews (reserva
+	 *    o espaço no topo só quando há mídia anexada) e remede a altura.
+	 */
+	function wireMedia( form ) {
+		var upload = form.querySelector( '.jet-form-builder-file-upload' );
+		if ( ! upload ) return;
+
+		form.classList.add( 'conversa-composer-has-media' );
+
+		var files = upload.querySelector( '.jet-form-builder-file-upload__files' );
+		if ( ! files ) return;
+
+		var syncPreviews = function () {
+			var has = files.querySelector( '.jet-form-builder-file-upload__file' ) !== null;
+			form.classList.toggle( 'conversa-composer-has-previews', has );
+			scheduleAutoSize( form );
+		};
+
+		syncPreviews();
+
+		if ( typeof MutationObserver === 'function' ) {
+			new MutationObserver( syncPreviews ).observe( files, { childList: true } );
+		}
 	}
 
 	function scanForms() {
