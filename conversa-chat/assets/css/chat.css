@@ -1,0 +1,435 @@
+/**
+ * Conversa Chat — estilos
+ *
+ * CONTRATO DE UI (definido no Elementor, não aqui):
+ * as quatro seções da single recebem estes IDs via campo "CSS ID" do
+ * Elementor: #parent-section-conversa, #header-conversa,
+ * #section-msgs-conversa, #footer-conversa.
+ * O plugin apenas reconhece os IDs — nunca cria estrutura.
+ *
+ * O visual dos CARDS de mensagem NÃO está aqui: é 100% do template do
+ * Listing (Elementor). Aqui só existe o que layout de página exige
+ * (viewport travado, área rolável) e o revestimento do composer.
+ */
+
+/* ==========================================================================
+   1. Estrutura de chat (viewport travado, mensagens roláveis)
+   ========================================================================== */
+
+body.single-conversa:not(.elementor-editor-active) {
+	overflow: hidden;
+}
+
+#parent-section-conversa {
+	display: flex !important;
+	flex-direction: column !important;
+	width: 100% !important;
+	height: var(--conversa-chat-vh, 100dvh) !important;
+	min-height: var(--conversa-chat-vh, 100dvh) !important;
+	max-height: var(--conversa-chat-vh, 100dvh) !important;
+	overflow: hidden !important;
+}
+
+body.admin-bar #parent-section-conversa {
+	height: calc(var(--conversa-chat-vh, 100dvh) - 32px) !important;
+	min-height: calc(var(--conversa-chat-vh, 100dvh) - 32px) !important;
+	max-height: calc(var(--conversa-chat-vh, 100dvh) - 32px) !important;
+}
+
+#header-conversa {
+	flex: 0 0 auto !important;
+	width: 100% !important;
+	z-index: 30;
+}
+
+#section-msgs-conversa {
+	position: relative;
+	flex: 1 1 auto !important;
+	width: 100% !important;
+	min-height: 0 !important;
+	overflow-x: hidden !important;
+	overflow-y: auto !important;
+	overscroll-behavior: contain;
+	scroll-behavior: smooth;
+	scrollbar-gutter: stable;
+}
+
+#footer-conversa {
+	flex: 0 0 auto !important;
+	width: 100% !important;
+	z-index: 40;
+}
+
+/* Wrappers do Elementor dentro da área de mensagens: coluna ancorada no fim. */
+#section-msgs-conversa > .e-con-inner,
+#section-msgs-conversa > .elementor-container,
+#section-msgs-conversa > .elementor-widget-wrap,
+#section-msgs-conversa > .elementor-widget-container {
+	display: flex !important;
+	flex-direction: column !important;
+	justify-content: flex-end !important;
+	width: 100% !important;
+	min-height: 100% !important;
+}
+
+#section-msgs-conversa > * {
+	min-width: 0;
+}
+
+#section-msgs-conversa [data-listing-id],
+#section-msgs-conversa .jet-listing-grid,
+#section-msgs-conversa .jet-listing-grid__items {
+	width: 100% !important;
+}
+
+#section-msgs-conversa [data-listing-id] {
+	margin-top: auto !important;
+}
+
+#section-msgs-conversa .jet-listing-grid__items {
+	display: flex !important;
+	flex-direction: column !important;
+	justify-content: flex-end !important;
+	min-height: 100% !important;
+}
+
+#section-msgs-conversa .jet-listing-grid__item {
+	flex: 0 0 auto !important;
+}
+
+/* Load-more (nativo do JetEngine) fica no TOPO da lista: carregar histórico. */
+#section-msgs-conversa .jet-listing-grid__loadmore {
+	order: -1;
+	margin: 8px auto 12px;
+}
+
+#section-msgs-conversa::-webkit-scrollbar { width: 8px; }
+#section-msgs-conversa::-webkit-scrollbar-track { background: transparent; }
+#section-msgs-conversa::-webkit-scrollbar-thumb {
+	background: #e5e7eb;
+	border-radius: 100px;
+}
+#section-msgs-conversa::-webkit-scrollbar-thumb:hover { background: #d1d5db; }
+
+@media (max-width: 782px) {
+	body.admin-bar #parent-section-conversa {
+		height: calc(var(--conversa-chat-vh, 100dvh) - 46px) !important;
+		min-height: calc(var(--conversa-chat-vh, 100dvh) - 46px) !important;
+		max-height: calc(var(--conversa-chat-vh, 100dvh) - 46px) !important;
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	#section-msgs-conversa { scroll-behavior: auto; }
+}
+
+/* ==========================================================================
+   2. Composer (revestimento do form JetFormBuilder)
+   --------------------------------------------------------------------------
+   Gate único: .conversa-chat-composer, aplicada pelo composer.js somente nos
+   forms configurados. Regras de ouro: nada de display no <form>, nada de
+   esconder wrapper com campo, nada de mexer em disabled.
+   ========================================================================== */
+
+body.single-conversa:not(.elementor-editor-active) #footer-conversa {
+	padding: 10px clamp(10px, 2.4vw, 20px) calc(10px + env(safe-area-inset-bottom, 0px)) !important;
+	border-top: 1px solid #f3f4f6 !important;
+	background: #ffffff !important;
+}
+
+body.single-conversa:not(.elementor-editor-active) #footer-conversa > .e-con-inner,
+body.single-conversa:not(.elementor-editor-active) #footer-conversa > .elementor-container,
+body.single-conversa:not(.elementor-editor-active) #footer-conversa .elementor-widget-container {
+	width: 100% !important;
+	max-width: 100% !important;
+}
+
+form.conversa-chat-composer {
+	--conversa-composer-min-height: 56px;
+	--conversa-composer-button-size: 40px;
+	--conversa-composer-button-gap: 7px;
+	--conversa-composer-x-padding: 18px;
+	--conversa-composer-textarea-min-height: 34px;
+	--conversa-composer-textarea-max-height: 168px;
+	--conversa-composer-bottom-step: 56px;
+
+	position: relative !important;
+	isolation: isolate !important;
+	width: min(100%, 920px) !important;
+	min-height: var(--conversa-composer-min-height) !important;
+	margin: 0 auto !important;
+	padding:
+		8px
+		calc(var(--conversa-composer-button-size) + var(--conversa-composer-button-gap) + 12px)
+		8px
+		var(--conversa-composer-x-padding) !important;
+	border: 1px solid #e5e7eb !important;
+	border-radius: 28px !important;
+	background: #ffffff !important;
+	box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04), 0 8px 24px rgba(15, 23, 42, 0.04) !important;
+	box-sizing: border-box !important;
+	transition: border-color 160ms ease, box-shadow 160ms ease, padding 160ms ease, border-radius 160ms ease !important;
+}
+
+form.conversa-chat-composer.conversa-composer-is-expanded {
+	padding: 12px var(--conversa-composer-x-padding) var(--conversa-composer-bottom-step) var(--conversa-composer-x-padding) !important;
+	border-radius: 30px !important;
+}
+
+form.conversa-chat-composer.conversa-composer-is-focused {
+	border-color: #d1d5db !important;
+	box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04), 0 10px 28px rgba(15, 23, 42, 0.055) !important;
+}
+
+form.conversa-chat-composer *,
+form.conversa-chat-composer *::before,
+form.conversa-chat-composer *::after {
+	box-sizing: border-box !important;
+}
+
+/* Reset visual dos wrappers do JetForm — sem display:none. */
+form.conversa-chat-composer .jet-form-builder-row,
+form.conversa-chat-composer .jet-form-builder__field-wrap,
+form.conversa-chat-composer .jet-form-builder__fields-group {
+	width: 100% !important;
+	max-width: 100% !important;
+	min-width: 0 !important;
+	margin: 0 !important;
+	padding: 0 !important;
+	border: 0 !important;
+}
+
+form.conversa-chat-composer .jet-form-builder__label,
+form.conversa-chat-composer .jet-form-builder__desc,
+form.conversa-chat-composer .jet-form-builder__field-label,
+form.conversa-chat-composer > label,
+form.conversa-chat-composer .jet-form-builder-row > label {
+	display: none !important;
+}
+
+form.conversa-chat-composer .jet-form-builder-messages-wrap {
+	display: none !important;
+}
+
+/* Linha do submit colapsada — classe aplicada pelo JS só após validar que o
+   wrapper não contém nenhum campo. */
+form.conversa-chat-composer .conversa-composer-submit-row {
+	position: static !important;
+	width: 0 !important; min-width: 0 !important; max-width: 0 !important;
+	height: 0 !important; min-height: 0 !important; max-height: 0 !important;
+	margin: 0 !important; padding: 0 !important; overflow: visible !important;
+}
+
+/* Textarea */
+form.conversa-chat-composer textarea,
+form.conversa-chat-composer textarea.jet-form-builder__field {
+	appearance: none !important;
+	display: block !important;
+	width: 100% !important;
+	min-width: 0 !important;
+	min-height: var(--conversa-composer-textarea-min-height) !important;
+	max-height: var(--conversa-composer-textarea-max-height) !important;
+	margin: 0 !important;
+	padding: 7px 2px !important;
+	border: 0 !important; border-radius: 0 !important; outline: 0 !important;
+	resize: none !important;
+	overflow-x: hidden !important;
+	overflow-y: hidden;
+	background: transparent !important;
+	box-shadow: none !important;
+	color: #111827 !important;
+	font-family: inherit !important;
+	font-size: 14px !important;
+	font-weight: 400 !important;
+	line-height: 20px !important;
+	letter-spacing: 0 !important;
+	scrollbar-width: thin;
+	scrollbar-color: #d1d5db transparent;
+}
+
+form.conversa-chat-composer textarea::placeholder {
+	color: #9ca3af !important;
+	opacity: 1 !important;
+}
+form.conversa-chat-composer textarea::-webkit-scrollbar { width: 6px; }
+form.conversa-chat-composer textarea::-webkit-scrollbar-track { background: transparent; }
+form.conversa-chat-composer textarea::-webkit-scrollbar-thumb {
+	background: #d1d5db;
+	border-radius: 100px;
+}
+
+/* Botão enviar */
+form.conversa-chat-composer button[type="submit"],
+form.conversa-chat-composer input[type="submit"],
+form.conversa-chat-composer .jet-form-builder__action-button {
+	position: absolute !important;
+	right: var(--conversa-composer-button-gap) !important;
+	bottom: var(--conversa-composer-button-gap) !important;
+	z-index: 5 !important;
+	display: block !important;
+	width: var(--conversa-composer-button-size) !important;
+	min-width: var(--conversa-composer-button-size) !important;
+	max-width: var(--conversa-composer-button-size) !important;
+	height: var(--conversa-composer-button-size) !important;
+	min-height: var(--conversa-composer-button-size) !important;
+	max-height: var(--conversa-composer-button-size) !important;
+	margin: 0 !important;
+	padding: 0 !important;
+	border: 0 !important;
+	border-radius: 999px !important;
+	outline: 0 !important;
+	background: #111827 !important;
+	color: #fff !important;
+	box-shadow: none !important;
+	cursor: pointer !important;
+	font-size: 0 !important;
+	line-height: 0 !important;
+	text-indent: -9999px !important;
+	overflow: hidden !important;
+	transform: none !important;
+	transition: background-color 160ms ease, color 160ms ease, transform 160ms ease, opacity 160ms ease !important;
+}
+
+form.conversa-chat-composer button[type="submit"]::before,
+form.conversa-chat-composer .jet-form-builder__action-button::before {
+	content: "" !important;
+	position: absolute !important;
+	top: 50% !important; left: 50% !important;
+	display: block !important;
+	width: 20px !important; height: 20px !important;
+	background: currentColor !important;
+	transform: translate(-50%, -50%) !important;
+	-webkit-mask: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2024%2024'%3E%3Cpath%20d='M12%205l7%207-1.45%201.45L13%208.9V20h-2V8.9l-4.55%204.55L5%2012l7-7z'/%3E%3C/svg%3E") center / contain no-repeat !important;
+	        mask: url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2024%2024'%3E%3Cpath%20d='M12%205l7%207-1.45%201.45L13%208.9V20h-2V8.9l-4.55%204.55L5%2012l7-7z'/%3E%3C/svg%3E") center / contain no-repeat !important;
+}
+
+form.conversa-chat-composer button[type="submit"]:hover,
+form.conversa-chat-composer input[type="submit"]:hover,
+form.conversa-chat-composer .jet-form-builder__action-button:hover {
+	background: #030712 !important;
+	transform: translateY(-1px) !important;
+}
+form.conversa-chat-composer button[type="submit"]:active,
+form.conversa-chat-composer input[type="submit"]:active,
+form.conversa-chat-composer .jet-form-builder__action-button:active {
+	transform: translateY(0) scale(0.98) !important;
+}
+
+form.conversa-chat-composer.conversa-composer-is-empty button[type="submit"],
+form.conversa-chat-composer.conversa-composer-is-empty input[type="submit"],
+form.conversa-chat-composer.conversa-composer-is-empty .jet-form-builder__action-button {
+	background: #e5e7eb !important;
+	color: #9ca3af !important;
+	cursor: default !important;
+	transform: none !important;
+}
+
+form.conversa-chat-composer button[disabled],
+form.conversa-chat-composer input[disabled],
+form.conversa-chat-composer textarea[disabled],
+form.conversa-chat-composer textarea[readonly],
+form.conversa-chat-composer .jet-form-builder__action-button[disabled] {
+	cursor: not-allowed !important;
+	opacity: 0.62 !important;
+}
+
+@media (max-width: 640px) {
+	body.single-conversa:not(.elementor-editor-active) #footer-conversa {
+		padding: 8px 10px calc(8px + env(safe-area-inset-bottom, 0px)) !important;
+	}
+
+	form.conversa-chat-composer {
+		--conversa-composer-min-height: 52px;
+		--conversa-composer-button-size: 34px;
+		--conversa-composer-button-gap: 8px;
+		--conversa-composer-x-padding: 13px;
+		--conversa-composer-textarea-min-height: 36px;
+		--conversa-composer-textarea-max-height: 132px;
+		--conversa-composer-bottom-step: 50px;
+		border-radius: 25px !important;
+	}
+	form.conversa-chat-composer.conversa-composer-is-expanded { border-radius: 28px !important; }
+	form.conversa-chat-composer textarea,
+	form.conversa-chat-composer textarea.jet-form-builder__field {
+		font-size: 16px !important;
+		line-height: 22px !important;
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	form.conversa-chat-composer,
+	form.conversa-chat-composer button[type="submit"],
+	form.conversa-chat-composer input[type="submit"],
+	form.conversa-chat-composer .jet-form-builder__action-button {
+		transition: none !important;
+	}
+}
+
+/* ==========================================================================
+   3. Aviso de aba secundária (tab lock)
+   ========================================================================== */
+
+.conversa-chat-tab-notice {
+	position: fixed;
+	left: 50%;
+	bottom: 24px;
+	z-index: 9999;
+	transform: translateX(-50%) translateY(12px);
+	opacity: 0;
+	transition: opacity 200ms ease, transform 200ms ease;
+	pointer-events: none;
+}
+
+.conversa-chat-tab-notice.is-visible {
+	opacity: 1;
+	transform: translateX(-50%) translateY(0);
+	pointer-events: auto;
+}
+
+.conversa-chat-tab-notice__box {
+	display: flex;
+	align-items: center;
+	gap: 14px;
+	max-width: min(92vw, 480px);
+	padding: 12px 16px;
+	border: 1px solid #e5e7eb;
+	border-radius: 14px;
+	background: #ffffff;
+	box-shadow: 0 12px 32px rgba(15, 23, 42, 0.14);
+	font-size: 13px;
+	line-height: 1.4;
+	color: #111827;
+}
+
+.conversa-chat-tab-notice__content {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+}
+
+.conversa-chat-tab-notice__content span {
+	color: #6b7280;
+}
+
+.conversa-chat-tab-notice__button {
+	flex: 0 0 auto;
+	padding: 8px 14px;
+	border: 0;
+	border-radius: 999px;
+	background: #111827;
+	color: #ffffff;
+	font-size: 13px;
+	font-weight: 600;
+	cursor: pointer;
+}
+
+.conversa-chat-tab-notice__button:hover {
+	background: #030712;
+}
+
+/* Aba secundária: o composer indica visualmente o modo leitura.
+   (Sem mexer em disabled — o submit é bloqueado pelo runtime.) */
+.conversa-chat-secondary-tab form.conversa-chat-composer {
+	opacity: 0.72 !important;
+	background: #f9fafb !important;
+}

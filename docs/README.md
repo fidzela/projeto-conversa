@@ -28,6 +28,7 @@ Esta pasta `docs/` é a **fonte única de verdade documental** do projeto. Ela c
 | [04 — O Problema do Real-Time e o Mirror Renderer](04-realtime-e-mirror-renderer.md) | Por que o real-time foi difícil, o que é o "custom renderer" e por que ele quebra o princípio fundamental |
 | [05 — Achados e Inconsistências](05-achados-e-inconsistencias.md) | Divergências entre o código do projeto e a raiz real dos plugins (ex.: hook inexistente) |
 | [06 — Diretrizes para a Nova Versão](06-diretrizes-nova-versao.md) | Princípios de arquitetura para reescrever o projeto integrado à raiz dos plugins, sem WPCode e sem engessar |
+| [07 — Plugin `conversa-chat`](07-plugin-conversa-chat.md) | **A nova versão implementada**: arquitetura do plugin, mapeamento nativo por necessidade, fluxo do tempo real e migração |
 
 ---
 
