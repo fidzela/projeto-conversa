@@ -175,4 +175,75 @@ class Conversa_Chat_Data {
 
 		return is_array( $items ) ? $items : array();
 	}
+
+	/**
+	 * Mensagens ANTIGAS: as $limit imediatamente ANTERIORES a $before_id
+	 * (para o "rolar pra cima" estilo WhatsApp). Simétrico ao get_after.
+	 *
+	 * Estratégia (mesma da CCT Query da 1.0.2, só que "para trás"):
+	 *  - _ID < $before_id, ordenado DESC, LIMIT N+1 → pega as N mais recentes
+	 *    ABAIXO do topo atual de forma barata;
+	 *  - o +1 diz se ainda há mais antigas além deste lote (has_more) sem uma
+	 *    query de count extra;
+	 *  - array_reverse → devolve o lote em ordem cronológica (mais antiga →
+	 *    mais nova), pronto para ser PREPENDido no topo.
+	 *
+	 * @return array { items: object[], has_more: bool }|WP_Error
+	 */
+	public static function get_before( $conversa_id, $before_id, $limit ) {
+
+		$factory = self::factory();
+
+		if ( ! $factory ) {
+			return new WP_Error( 'cct_missing', 'CCT de mensagens não encontrado.' );
+		}
+
+		$before_id = (int) $before_id;
+		$limit     = max( 1, (int) $limit );
+
+		// Sem topo conhecido não há "antigas" a buscar.
+		if ( $before_id <= 1 ) {
+			return array( 'items' => array(), 'has_more' => false );
+		}
+
+		$raw_args   = self::base_args( $conversa_id );
+		$raw_args[] = array(
+			'field'    => '_ID',
+			'operator' => '<',
+			'value'    => $before_id,
+		);
+
+		$args = $factory->prepare_query_args( $raw_args );
+
+		$factory->db->set_format_flag( \OBJECT );
+
+		$rows = $factory->db->query(
+			$args,
+			$limit + 1, // +1 sonda se há mais antigas além do lote
+			0,
+			array(
+				array(
+					'orderby' => '_ID',
+					'order'   => 'desc',
+				),
+			)
+		);
+
+		$rows = is_array( $rows ) ? $rows : array();
+
+		$has_more = count( $rows ) > $limit;
+
+		if ( $has_more ) {
+			// Descarta a extra (a mais antiga do DESC) — ela só serviu de sonda.
+			$rows = array_slice( $rows, 0, $limit );
+		}
+
+		// DESC (mais nova primeiro) → ASC (cronológica) para o prepend.
+		$rows = array_reverse( $rows );
+
+		return array(
+			'items'    => $rows,
+			'has_more' => $has_more,
+		);
+	}
 }

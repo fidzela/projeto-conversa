@@ -32,10 +32,12 @@ class Conversa_Chat_Ajax {
 	public static function init() {
 		add_action( 'wp_ajax_conversa_chat_status', array( __CLASS__, 'status' ) );
 		add_action( 'wp_ajax_conversa_chat_after', array( __CLASS__, 'after' ) );
+		add_action( 'wp_ajax_conversa_chat_before', array( __CLASS__, 'before' ) );
 
 		// Visitante deslogado nunca acessa (o chat exige login upstream).
 		add_action( 'wp_ajax_nopriv_conversa_chat_status', array( __CLASS__, 'block_nopriv' ) );
 		add_action( 'wp_ajax_nopriv_conversa_chat_after', array( __CLASS__, 'block_nopriv' ) );
+		add_action( 'wp_ajax_nopriv_conversa_chat_before', array( __CLASS__, 'block_nopriv' ) );
 	}
 
 	public static function block_nopriv() {
@@ -133,6 +135,48 @@ class Conversa_Chat_Ajax {
 	}
 
 	/**
+	 * widget_settings REAIS do grid, enviados pelo cliente a partir do data-nav
+	 * que o próprio JetEngine publica no DOM. Usados no render incremental para
+	 * paridade com o load-more nativo (mesmo enfileiramento de assets). O
+	 * listing_id é sempre reimposto pelo servidor no renderer — o cliente não
+	 * escolhe QUAL listing renderiza.
+	 */
+	private static function read_widget_settings() {
+
+		if ( empty( $_POST['widget_settings'] ) ) {
+			return array();
+		}
+
+		$raw = wp_unslash( $_POST['widget_settings'] ); // phpcs:ignore WordPress.Security.ValidatedSanitizedInput
+
+		if ( is_string( $raw ) ) {
+			$decoded = json_decode( $raw, true );
+			return is_array( $decoded ) ? $decoded : array();
+		}
+
+		return is_array( $raw ) ? $raw : array();
+	}
+
+	/**
+	 * Anexa os assets dos widgets do card ao response (CSS/JS enfileirados
+	 * DURANTE o posts_loop de render_items). É o mesmo método público do
+	 * load-more nativo (ajax-handlers.php:577): lê wp_styles()/wp_scripts()->queue
+	 * do MESMO request e preenche $response['styles'] / $response['scripts']. O
+	 * cliente injeta e deduplica por handle (main.js:1456-1481).
+	 *
+	 * Paridade legítima com o load-more nativo: garante que um card com QUALQUER
+	 * widget (o autor pode mudar o layout — princípio de não engessar) traga seus
+	 * assets no primeiro paint. NÃO é a correção do bug do "primeiro item pelado":
+	 * esse bug era de autoração do card (Listing aninhado) e foi resolvido no
+	 * layout (ver docs/09).
+	 */
+	private static function attach_assets( &$response ) {
+		if ( class_exists( 'Jet_Engine_Listings_Ajax_Handlers' ) ) {
+			Jet_Engine_Listings_Ajax_Handlers::maybe_add_enqueue_assets_data( $response );
+		}
+	}
+
+	/**
 	 * ENDPOINT 2: mensagens após um _ID, já renderizadas pelo template real.
 	 */
 	public static function after() {
@@ -149,18 +193,69 @@ class Conversa_Chat_Ajax {
 			self::send_error( $items->get_error_message(), $items->get_error_code(), 500 );
 		}
 
-		$html = Conversa_Chat_Renderer::render_items( $items, $req['conversa_id'] );
+		$html = Conversa_Chat_Renderer::render_items( $items, $req['conversa_id'], self::read_widget_settings() );
 
 		$status = Conversa_Chat_Data::get_status( $req['conversa_id'] );
 
-		wp_send_json_success(
-			array(
-				'conversa_id' => $req['conversa_id'],
-				'after_id'    => $after_id,
-				'appended'    => count( $items ),
-				'html'        => $html,
-				'status'      => is_wp_error( $status ) ? null : $status,
-			)
+		$response = array(
+			'conversa_id' => $req['conversa_id'],
+			'after_id'    => $after_id,
+			'appended'    => count( $items ),
+			'html'        => $html,
+			'status'      => is_wp_error( $status ) ? null : $status,
 		);
+
+		self::attach_assets( $response );
+
+		wp_send_json_success( $response );
+	}
+
+	/**
+	 * ENDPOINT 3: mensagens ANTIGAS (rolar pra cima / "ver anteriores"),
+	 * já renderizadas pelo template real, em ordem cronológica para PREPEND.
+	 *
+	 * Simétrico ao `after`. Devolve também:
+	 *  - has_more   → ainda há mensagens além deste lote (controla o botão/scroll);
+	 *  - oldest_id  → menor _ID deste lote (o novo topo para o próximo before).
+	 */
+	public static function before() {
+
+		$req = self::validate( 'before', conversa_chat()->setting( 'rate_before', 40 ) );
+
+		$before_id = isset( $_POST['before_id'] ) ? absint( wp_unslash( $_POST['before_id'] ) ) : 0;
+
+		$limit = (int) conversa_chat()->setting( 'older_batch', 15 );
+
+		$result = Conversa_Chat_Data::get_before( $req['conversa_id'], $before_id, $limit );
+
+		if ( is_wp_error( $result ) ) {
+			self::send_error( $result->get_error_message(), $result->get_error_code(), 500 );
+		}
+
+		$items = $result['items'];
+
+		$html = Conversa_Chat_Renderer::render_items( $items, $req['conversa_id'], self::read_widget_settings() );
+
+		// Menor _ID do lote = novo topo para a próxima carga.
+		$oldest_id = 0;
+		foreach ( $items as $item ) {
+			$id = is_object( $item ) && isset( $item->_ID ) ? (int) $item->_ID : 0;
+			if ( $id && ( 0 === $oldest_id || $id < $oldest_id ) ) {
+				$oldest_id = $id;
+			}
+		}
+
+		$response = array(
+			'conversa_id' => $req['conversa_id'],
+			'before_id'   => $before_id,
+			'prepended'   => count( $items ),
+			'has_more'    => (bool) $result['has_more'],
+			'oldest_id'   => $oldest_id,
+			'html'        => $html,
+		);
+
+		self::attach_assets( $response );
+
+		wp_send_json_success( $response );
 	}
 }

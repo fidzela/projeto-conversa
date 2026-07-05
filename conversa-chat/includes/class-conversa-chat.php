@@ -79,6 +79,36 @@ class Conversa_Chat {
 				'footer'   => '#footer-conversa',
 			),
 
+			// --- Carregamento inicial (performance) -------------------------------
+			// Quantas mensagens o Listing renderiza no primeiro paint. O plugin
+			// pega as N MAIS RECENTES (order DESC + LIMIT no código) e reexibe do
+			// mais antigo → mais novo, via os hooks nativos da Query do JetEngine
+			// (after-query-setup + query/items). Isso resolve a lentidão com
+			// 40–60 mensagens SEM subquery na UI (a CCT Query só faz query linear)
+			// e SEM tocar na sua CCT Query: ela pode continuar como está.
+			//   0  = desligado (mostra todas, comportamento antigo).
+			//   6  = valor de TESTE atual (produção: ~30).
+			'initial_limit'   => 6,
+			// ID da CCT Query que alimenta o Listing das mensagens.
+			//   0 = auto: casa qualquer CCT Query sobre o 'cct_slug' (mensagens_).
+			//   >0 = cirúrgico: limita/reordena SÓ essa query (use se houver mais
+			//        de uma listagem do mesmo CCT e você quiser tratar só uma).
+			'messages_query_id' => 0,
+			// Coluna de data do CCT usada para ordenar "as mais recentes".
+			// 'cct_created' é a coluna nativa de criação do CCT.
+			'messages_order_field' => 'cct_created',
+
+			// --- Carregar mensagens ANTIGAS (rolar pra cima, estilo WhatsApp) -----
+			// O load-more NATIVO do JetEngine anexa no FIM (feed que cresce pra
+			// baixo) — errado para um chat. Aqui o runtime carrega as antigas e
+			// as insere no TOPO, com a rolagem ancorada (a viewport não pula).
+			//   load_older   → liga/desliga o recurso.
+			//   older_batch  → quantas mensagens por carga (TESTE: 3; produção: ~15).
+			//   older_trigger→ 'scroll' (rolar ao topo) | 'button' | 'both'.
+			'load_older'      => true,
+			'older_batch'     => 3,
+			'older_trigger'   => 'both',
+
 			// --- Real-time --------------------------------------------------------
 			'realtime'        => true,
 			'active_poll_ms'  => 4000,    // polling com usuário ativo
@@ -87,10 +117,16 @@ class Conversa_Chat {
 			'after_limit'     => 20,      // máx. de mensagens por fetch incremental
 			'tab_lock'        => true,    // só uma aba envia/faz polling
 
+			// Limpa o textarea após envio OK (fallback ao "Clear form after
+			// submit" nativo do JFB, que vem desligado). Desligue se preferir
+			// usar só o clear nativo do JFB.
+			'clear_composer_on_success' => true,
+
 			// --- Endpoint / proteção ----------------------------------------------
 			'status_cache_ttl' => 2,      // segundos de cache do status (object cache)
 			'rate_status'      => 80,     // req/min por usuário+conversa
 			'rate_after'       => 40,
+			'rate_before'      => 40,     // carregar antigas (rolar pra cima)
 			'rate_window'      => 60,
 
 			'debug'            => false,

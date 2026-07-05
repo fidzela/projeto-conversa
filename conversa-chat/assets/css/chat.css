@@ -433,3 +433,41 @@ form.conversa-chat-composer .jet-form-builder__action-button[disabled] {
 	opacity: 0.72 !important;
 	background: #f9fafb !important;
 }
+
+/* ==========================================================================
+   6. Carregar mensagens anteriores (rolar pra cima / botão)
+   ========================================================================== */
+
+.conversa-chat-older {
+	display: flex;
+	justify-content: center;
+	align-items: center;
+	padding: 8px 0 4px;
+}
+
+.conversa-chat-older[hidden] {
+	display: none;
+}
+
+.conversa-chat-older__button {
+	appearance: none;
+	border: 0;
+	border-radius: 999px;
+	padding: 6px 16px;
+	background: rgba(17, 24, 39, 0.06);
+	color: #374151;
+	font-size: 13px;
+	font-weight: 600;
+	line-height: 1.2;
+	cursor: pointer;
+	transition: background 0.15s ease, opacity 0.15s ease;
+}
+
+.conversa-chat-older__button:hover {
+	background: rgba(17, 24, 39, 0.12);
+}
+
+.conversa-chat-older__button:disabled {
+	opacity: 0.6;
+	cursor: default;
+}

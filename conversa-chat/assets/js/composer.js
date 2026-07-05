@@ -130,6 +130,34 @@
 		} );
 	}
 
+	/**
+	 * Limpa o textarea após um envio bem-sucedido.
+	 *
+	 * O JetFormBuilder tem "Clear form after submit" nativo (atributo data-clear,
+	 * form-builder.php:146) — mas ele depende de estar LIGADO nas config do form,
+	 * e por padrão vem desligado. Este fallback garante o comportamento esperado
+	 * de chat (campo vazio após enviar) mesmo sem o setting, sem brigar com o
+	 * envio: roda SÓ no evento on-success (mensagem já gravada no CCT).
+	 *
+	 * Dispara 'input'/'change' para o modelo reativo do JFB e o auto-size
+	 * re-sincronizarem com o valor vazio. Desligável via cfg.clear_on_success.
+	 */
+	function clearComposer( form ) {
+		var cache = getCache( form, true );
+		var ta = cache.textarea;
+
+		if ( ! ta || ta.value === '' ) return;
+
+		ta.value = '';
+
+		try {
+			ta.dispatchEvent( new Event( 'input', { bubbles: true } ) );
+			ta.dispatchEvent( new Event( 'change', { bubbles: true } ) );
+		} catch ( e ) {}
+
+		scheduleAutoSize( form );
+	}
+
 	// ------------------------------------------------------------------
 	// Boot por form
 	// ------------------------------------------------------------------
@@ -197,10 +225,15 @@
 
 		var $doc = window.jQuery( document );
 
-		// O JFB (com clear nativo ligado) já limpou o campo: só re-medimos.
+		// Envio OK: limpa o campo (fallback robusto) e re-mede o textarea.
 		$doc.on( 'jet-form-builder/ajax/on-success', function ( event, response, $form ) {
 			var form = $form && $form[0] ? $form[0] : null;
 			if ( ! form || ! form.matches || ! form.matches( cfg.selectors.form ) ) return;
+
+			if ( cfg.clear_on_success !== false ) {
+				clearComposer( form );
+			}
+
 			window.setTimeout( function () { scheduleAutoSize( form ); }, 100 );
 			window.setTimeout( function () { scheduleAutoSize( form ); }, 350 );
 		} );

@@ -126,6 +126,7 @@ class Conversa_Chat_Assets {
 			'actions'        => array(
 				'status' => 'conversa_chat_status',
 				'after'  => 'conversa_chat_after',
+				'before' => 'conversa_chat_before',
 			),
 			'conversa_id'    => $ctx['conversa_id'],
 			'user_id'        => $ctx['user_id'],
@@ -143,6 +144,17 @@ class Conversa_Chat_Assets {
 				'form'     => implode( ', ', $form_selectors ),
 			),
 			'realtime'       => (bool) $realtime,
+			'clear_on_success' => (bool) $settings['clear_composer_on_success'],
+
+			// Carregar mensagens antigas (rolar pra cima). has_older diz, já no
+			// boot, se existem mensagens além das exibidas (count total >
+			// initial_limit) — evita mostrar o botão/gatilho quando não há mais
+			// nada para carregar.
+			'load_older'     => (bool) $settings['load_older'] && (int) $settings['initial_limit'] > 0,
+			'older_trigger'  => (string) $settings['older_trigger'],
+			'has_older'      => ( (int) $settings['initial_limit'] > 0 )
+				&& ( (int) ( is_array( $status ) ? $status['count'] : 0 ) > (int) $settings['initial_limit'] ),
+
 			'initial_status' => $status,
 			'active_poll_ms' => (int) $settings['active_poll_ms'],
 			'idle_poll_ms'   => (int) $settings['idle_poll_ms'],
@@ -153,6 +165,8 @@ class Conversa_Chat_Assets {
 				'other_tab_title' => __( 'Conversa aberta em outra aba', 'conversa-chat' ),
 				'other_tab_text'  => __( 'Esta aba está em modo leitura.', 'conversa-chat' ),
 				'take_over'       => __( 'Usar esta aba', 'conversa-chat' ),
+				'load_older'      => __( 'Ver mensagens anteriores', 'conversa-chat' ),
+				'loading_older'   => __( 'Carregando…', 'conversa-chat' ),
 			),
 		);
 
