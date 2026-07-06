@@ -481,7 +481,10 @@ form.conversa-composer-has-media .jet-form-builder-file-upload__file {
 	   AVANÇADA. Forçamos o thumb 100% opaco e sem o ícone placeholder, senão a
 	   miniatura ficava apagada/escondida com o espaço reservado. */
 	opacity: 1 !important;
-	background: #f3f4f6 !important;
+	/* background-color de fundo; a miniatura em si é pintada pelo composer.js
+	   (paintPreviews) como background-image inline a partir do data-file — vence
+	   este 'none' e independe do <img> do JFB renderizar. */
+	background-color: #f3f4f6 !important;
 	background-image: none !important;
 	border: 1px solid #e5e7eb !important;
 	box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06) !important;

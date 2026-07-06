@@ -2,6 +2,28 @@
 
 Formato: cada versão finalizada gera `dist/conversa-chat-{versao}.zip`.
 
+## 1.1.2
+
+Correção real do **preview da mídia** (o fix de opacity da 1.1.1 mirou o alvo
+errado) e esclarecimento do erro de validação.
+
+### Corrigido — miniatura do anexo agora aparece (paintPreviews)
+Diagnóstico: como o `+` posiciona certo e o espaço reserva certo, o CSS aplica e
+o `.__file` entra na régua — logo o problema era o **`<img>` do preview do JFB
+não renderizar** nessa montagem (blob/CSP/tema), e não a `opacity` (fix da 1.1.1
+mirou o alvo errado). Agora o `composer.js::paintPreviews` **pinta a miniatura
+como `background-image` do próprio `.__file`, a partir do `data-file`** que o JFB
+já grava ali (`image-preview.php` → `media.field.js`). Assim o thumb aparece
+independentemente do `<img>` do JFB, sem recriar uploader/preview/exclusão. Se o
+`<img>` do JFB existir, ele fica por cima (object-fit cover), sem conflito.
+Verificado ponta a ponta com o composer.js real sobre um `.__file` sem `<img>`.
+
+### Esclarecido — a "mensagem de erro" depende de validação AVANÇADA (config)
+O check de tamanho/tipo de arquivo **só é carregado em validação avançada**
+(`media-field.php:205`). No modo **Browser** (padrão), o JFB **não gera** o erro
+— não há o que o plugin reposicionar. Para o aviso aparecer, mude a validação do
+form para **Advanced** (o plugin já o torna layout-safe). Ver docs/11 §11.3.
+
 ## 1.1.1
 
 Ajustes do composer de mídia (pós-teste real) + **roteiro do segundo coração**

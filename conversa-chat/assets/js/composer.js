@@ -20,7 +20,10 @@
  *    No sucesso, limpa a mídia pelo caminho nativo (clearMedia dispara o
  *    excluir de cada preview) para o espaço reservado recolher;
  *  - ancora previews/"+" em absoluto no <form> (unpositionUpTo) para o preview
- *    não sumir sob um wrapper posicionado do bloco.
+ *    não sumir sob um wrapper posicionado do bloco;
+ *  - pinta a miniatura a partir do data-file do próprio .__file (paintPreviews)
+ *    — garante o thumb mesmo que o <img> do preview do JFB não renderize
+ *    (blob/CSP/tema). Continua sendo o dado que o JFB expôs; não recria nada.
  *  A mensagem de status "só em erro" e os erros de validação layout-safe são
  *  puramente CSS (chat.css §2 e §2b). Fluxo completo do JFB em docs/11.
  *
@@ -310,6 +313,7 @@
 		if ( ! files ) return;
 
 		var syncPreviews = function () {
+			paintPreviews( files );
 			var has = files.querySelector( '.jet-form-builder-file-upload__file' ) !== null;
 			form.classList.toggle( 'conversa-composer-has-previews', has );
 			scheduleAutoSize( form );
@@ -318,8 +322,43 @@
 		syncPreviews();
 
 		if ( typeof MutationObserver === 'function' ) {
-			new MutationObserver( syncPreviews ).observe( files, { childList: true } );
+			// childList: novos previews; subtree/attributes: o JFB às vezes só
+			// preenche o data-file / injeta o <img> depois de criar o .__file.
+			new MutationObserver( syncPreviews ).observe( files, {
+				childList: true,
+				subtree: true,
+				attributes: true,
+				attributeFilter: [ 'data-file', 'src' ]
+			} );
 		}
+	}
+
+	/**
+	 * Pinta a miniatura de CADA preview a partir do data-file que o próprio JFB
+	 * grava no .__file (image-preview.php: data-file="%file_url%"; media.field.js
+	 * troca por URL.createObjectURL do arquivo). Garantia de robustez: mesmo que
+	 * o <img> do preview do JFB não renderize nesta montagem (blob/CSP/tema), o
+	 * thumb aparece como background do próprio .__file. Não recria uploader nem
+	 * exclusão — só assegura o visual da miniatura a partir do dado que o JFB já
+	 * expôs. Inline !important vence o "background-image: none" do CSS. Se o
+	 * <img> do JFB existir, ele fica por cima (object-fit cover), sem conflito.
+	 */
+	function paintPreviews( files ) {
+		var items = files.querySelectorAll( '.jet-form-builder-file-upload__file' );
+		Array.prototype.forEach.call( items, function ( item ) {
+			var url = item.getAttribute( 'data-file' ) || '';
+			if ( ! /^(blob:|https?:|data:)/.test( url ) ) {
+				return;
+			}
+			if ( item.dataset.conversaPainted === url ) {
+				return; // já pintado com esta URL.
+			}
+			item.dataset.conversaPainted = url;
+			item.style.setProperty( 'background-image', 'url("' + url.replace( /"/g, '%22' ) + '")', 'important' );
+			item.style.setProperty( 'background-size', 'cover', 'important' );
+			item.style.setProperty( 'background-position', 'center', 'important' );
+			item.style.setProperty( 'background-repeat', 'no-repeat', 'important' );
+		} );
 	}
 
 	/**
