@@ -110,13 +110,23 @@ class Conversa_Chat_Assets {
 		}
 
 		// Seletor NATIVO do form JetFormBuilder: o <form> carrega a classe
-		// jet-form-builder e data-form-id (form-builder.php:139,142).
+		// jet-form-builder e data-form-id (form-builder.php:139,142). A lista de
+		// forms vem do registro de LAYOUTS (composer_forms), não mais só de
+		// form_ids — assim o composer de mídia é reconhecido pelo mesmo caminho.
+		$composer_forms = conversa_chat()->composer_forms();
 		$form_selectors = array();
-		foreach ( (array) $settings['form_ids'] as $form_id ) {
-			$form_selectors[] = sprintf(
+		$forms_meta     = array();
+		foreach ( $composer_forms as $form_id => $features ) {
+			$selector = sprintf(
 				'%s form.jet-form-builder[data-form-id="%d"]',
 				$settings['selectors']['footer'],
 				(int) $form_id
+			);
+			$form_selectors[] = $selector;
+			$forms_meta[]     = array(
+				'id'     => (int) $form_id,
+				'layout' => isset( $features['layout'] ) ? (string) $features['layout'] : 'text',
+				'media'  => ! empty( $features['media'] ),
 			);
 		}
 
@@ -145,6 +155,11 @@ class Conversa_Chat_Assets {
 			),
 			'realtime'       => (bool) $realtime,
 			'clear_on_success' => (bool) $settings['clear_composer_on_success'],
+
+			// Layouts do composer: features por form (o composer.js também
+			// feature-detecta o campo de mídia nativo, isto aqui é o mapa oficial).
+			'forms'          => $forms_meta,
+			'media_field'    => (string) $settings['message_image_field'],
 
 			// Carregar mensagens antigas (rolar pra cima). has_older diz, já no
 			// boot, se existem mensagens além das exibidas (count total >

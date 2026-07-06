@@ -2,6 +2,131 @@
 
 Formato: cada versão finalizada gera `dist/conversa-chat-{versao}.zip`.
 
+## 1.1.3
+
+**A causa raiz REAL do preview sumido** (achada pelo diagnóstico no myttooz).
+
+### Corrigido — ancestral do campo de mídia oculto pelo tema (unhideUpTo)
+O diagnóstico no site mostrou o quadro definitivo: o `<img>` do preview **existia e
+era válido** (`blob:…`, opacity 1), mas o `.__files` tinha **`offsetParent` nulo e
+tamanho 0×0** — a assinatura de **`display:none` num ANCESTRAL**. Não era opacity
+(1.1.1), nem o `<img>` (1.1.2): o **tema/Elementor escondia um wrapper acima** do
+campo de mídia, colapsando tudo. Verifiquei que nem o nosso CSS nem o do JFB
+escondem esses wrappers.
+
+Correção determinística: `composer.js::unhideUpTo` caminha do `.__files` até o
+`<form>` e **força visível qualquer ancestral que esteja `display:none`** (inline
+`!important`, só nos ocultos) — sem depender da classe do wrapper. Com isso o
+galho destrava e o preview (miniatura + X) aparece. As defesas anteriores
+seguem: `paintPreviews` (thumb via data-file) e `unpositionUpTo` (âncora no form).
+Verificado ponta a ponta com o composer.js real sobre um campo com ancestral
+`display:none`.
+
+## 1.1.2
+
+Correção real do **preview da mídia** (o fix de opacity da 1.1.1 mirou o alvo
+errado) e esclarecimento do erro de validação.
+
+### Corrigido — miniatura do anexo agora aparece (paintPreviews)
+Diagnóstico: como o `+` posiciona certo e o espaço reserva certo, o CSS aplica e
+o `.__file` entra na régua — logo o problema era o **`<img>` do preview do JFB
+não renderizar** nessa montagem (blob/CSP/tema), e não a `opacity` (fix da 1.1.1
+mirou o alvo errado). Agora o `composer.js::paintPreviews` **pinta a miniatura
+como `background-image` do próprio `.__file`, a partir do `data-file`** que o JFB
+já grava ali (`image-preview.php` → `media.field.js`). Assim o thumb aparece
+independentemente do `<img>` do JFB, sem recriar uploader/preview/exclusão. Se o
+`<img>` do JFB existir, ele fica por cima (object-fit cover), sem conflito.
+Verificado ponta a ponta com o composer.js real sobre um `.__file` sem `<img>`.
+
+### Esclarecido — a "mensagem de erro" depende de validação AVANÇADA (config)
+O check de tamanho/tipo de arquivo **só é carregado em validação avançada**
+(`media-field.php:205`). No modo **Browser** (padrão), o JFB **não gera** o erro
+— não há o que o plugin reposicionar. Para o aviso aparecer, mude a validação do
+form para **Advanced** (o plugin já o torna layout-safe). Ver docs/11 §11.3.
+
+## 1.1.1
+
+Ajustes do composer de mídia (pós-teste real) + **roteiro do segundo coração**
+(análise profunda do JetFormBuilder). Detalhes em
+[`docs/11-segundo-coracao-jetformbuilder-fluxo-de-envio.md`](../docs/11-segundo-coracao-jetformbuilder-fluxo-de-envio.md).
+
+### Corrigido — preview 50×50 não aparecia (espaço reservado, miniatura oculta)
+Duas causas, ambas de conflito com o JFB (não de config do Value Format):
+- **CSS-base do JFB**: `.jet-form-builder-file-upload__file` vem com `opacity:.5`
+  + `background-image` (ícone placeholder), e o script que devolveria `opacity:1`
+  só entra em validação avançada. Agora forçamos `opacity:1` e sem placeholder.
+- **Posição**: o `.__files` (previews) resolvia em absoluto sob um wrapper
+  `position:relative` do bloco. Agora `unpositionUpTo` (composer.js) zera a
+  position dos ancestrais até o `<form>`, ancorando o preview na moldura certa.
+
+### Corrigido — mídia não limpava após o envio (espaço pendurado)
+`clearMedia` dispara, no `on-success`, o **excluir nativo** de cada preview
+(`.__file-remove` → `removeFile` do JFB). O campo reseta pelo caminho do JFB e o
+`has-previews` desliga → o espaço reservado recolhe.
+
+### Corrigido — validação layout-safe (erro de arquivo grande agora pode aparecer)
+O check de tamanho/tipo de arquivo **só carrega em validação avançada**
+(`media-field.php:205`). Ao ligar o modo avançado, os erros inline
+(`jet-form-builder__field-error`) e os do Media Field (`.__errors`) quebravam a
+pílula — agora são **reposicionados como aviso discreto acima do composer**
+(mesma pegada da mensagem de status). Ativar validação avançada não quebra o layout.
+
+### Botão de excluir sempre visível
+O `.__file-remove` nativo fica escondido (`opacity:0` até hover) e esticado;
+revestimos como um **X** pequeno no canto, sempre visível (melhor no touch).
+
+### Documentado — o SEGUNDO CORAÇÃO (roteiro do JFB)
+Novo [`docs/11`](../docs/11-segundo-coracao-jetformbuilder-fluxo-de-envio.md): o
+pipeline de envio do JFB, o que já "passamos por cima", os **dois modos de
+validação** e como ativar sem quebrar, por que **Limit Form Responses NÃO** serve
+ao composer, quais camadas de **segurança/captcha** ligar, e um roteiro de
+ativação segura. Responde à dúvida de config do Media Field (Value Format não
+afeta o preview).
+
+## 1.1.0
+
+Correções de UX do composer + **módulo de mídia** (enviar imagem na mensagem)
++ registro de **layouts** de composer. Detalhes em
+[`docs/10-composer-midia-e-layouts.md`](../docs/10-composer-midia-e-layouts.md).
+
+### Corrigido — composer (o que foi pedido primeiro)
+- **Auto-grow sem "desce e sobe":** o textarea passava por baixo do botão e
+  oscilava até fechar a 1ª linha. Causa: a expansão trocava a reserva lateral do
+  botão (mudava a largura útil) e a medição batia em larguras diferentes a cada
+  tecla. Agora a expansão é **sticky** (só reverte ao esvaziar) e a altura é
+  medida em **duas etapas** (na largura final). O botão fica fixo.
+- **Sem o balão nativo de required** ("Preencha este campo"): suprimido via
+  `invalid` + `preventDefault` — mantém a obrigatoriedade, tira só o popup feio.
+- **Status só em erro:** o JetFormBuilder emite mensagem `--success`/`--error`
+  (`form-messages/builder.php:73-74`). O sucesso é redundante no chat (a mensagem
+  já aparece pela lista) → escondido; o **erro** aparece como aviso discreto
+  acima do composer.
+
+### Adicionado — módulo de mídia (metafield `message_image`)
+- A mensagem pode levar **imagem** além do texto. A **exibição** já vinha de
+  graça (o card do Listing mostra a coluna; o render incremental usa o template
+  real — trocar o layout do card não quebrou o real-time).
+- O **envio** usa o **Media Field NATIVO do JetFormBuilder**
+  (`templates/fields/media-field.php`). O plugin só **reveste** o campo, no
+  estilo da referência: input file vira o botão **`+`** (barra inferior
+  esquerda, sem microfone), a lista de previews vira miniaturas **50×50
+  `object-fit: cover`** e o `.__file-remove` nativo vira um **X** no canto.
+  Nada de uploader/preview/exclusão recriados — tudo é do JFB
+  (`image-preview.php` + `media.field.js`).
+- Feature-detect: o revestimento liga sozinho quando um form com Media Field
+  entra na página (`composer.js::wireMedia`).
+
+### Adicionado — layouts de composer (armazenados; base para o futuro)
+- `composer_layouts` (texto / texto+mídia) + `default_layout` (`media`) +
+  `composer_forms()` unindo layouts e `form_ids`. Separar/duplicar o composer é
+  **configuração**, não código (não engessa). O form atual **não foi alterado**.
+- `default_layout => 'media'`. Para o form de mídia virar padrão de fato, basta
+  informar o `form_id` do form duplicado (via `conversa-chat/settings`).
+
+### Verificado
+- Render do composer (CSS do plugin sobre o **DOM nativo** do Media Field) nos
+  quatro estados: texto vazio/expandido e mídia sem/com anexos.
+
 ## 1.0.4
 
 Desfecho do bug do "primeiro item pelado", remoção do lixo das tentativas que não
