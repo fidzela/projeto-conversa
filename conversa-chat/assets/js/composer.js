@@ -17,8 +17,12 @@
  *  - detecta o campo de MÍDIA nativo do JFB (.jet-form-builder-file-upload) e
  *    liga o layout de anexo (+ / previews). O upload, a miniatura e o excluir
  *    são 100% do JFB (media-field.php + media.field.js); aqui só estilizamos.
- *  A mensagem de status "só em erro" é puramente CSS (esconde --success,
- *  revela --error) — ver chat.css §2.
+ *    No sucesso, limpa a mídia pelo caminho nativo (clearMedia dispara o
+ *    excluir de cada preview) para o espaço reservado recolher;
+ *  - ancora previews/"+" em absoluto no <form> (unpositionUpTo) para o preview
+ *    não sumir sob um wrapper posicionado do bloco.
+ *  A mensagem de status "só em erro" e os erros de validação layout-safe são
+ *  puramente CSS (chat.css §2 e §2b). Fluxo completo do JFB em docs/11.
  *
  * Regras de ouro preservadas da versão anterior (lições reais de produção):
  *  - NUNCA forçar display no <form>;
@@ -270,13 +274,39 @@
 	 *  - observa a lista de previews p/ .conversa-composer-has-previews (reserva
 	 *    o espaço no topo só quando há mídia anexada) e remede a altura.
 	 */
+	/**
+	 * Neutraliza `position` de todos os ancestrais de `node` até `stop`
+	 * (exclusivo). Necessário porque o revestimento posiciona os previews e o
+	 * botão "+" em ABSOLUTO relativo ao <form>: se algum wrapper intermediário
+	 * do bloco do Media Field for `position: relative`, o absoluto resolveria
+	 * NELE (o preview aparecia fora da moldura / atrás do textarea — o "espaço
+	 * reservado no topo, mas a miniatura não aparecia"). Só toca ancestrais,
+	 * nunca o próprio node nem seus filhos (o .__file-remove segue relativo ao
+	 * .__file).
+	 */
+	function unpositionUpTo( node, stop ) {
+		var el = node && node.parentElement;
+		while ( el && el !== stop && el !== document.body ) {
+			if ( window.getComputedStyle( el ).position !== 'static' ) {
+				el.style.position = 'static';
+			}
+			el = el.parentElement;
+		}
+	}
+
 	function wireMedia( form ) {
 		var upload = form.querySelector( '.jet-form-builder-file-upload' );
 		if ( ! upload ) return;
 
 		form.classList.add( 'conversa-composer-has-media' );
 
-		var files = upload.querySelector( '.jet-form-builder-file-upload__files' );
+		var files  = upload.querySelector( '.jet-form-builder-file-upload__files' );
+		var fields = upload.querySelector( '.jet-form-builder-file-upload__fields' );
+
+		// Ancoragem determinística no <form> (ver unpositionUpTo).
+		unpositionUpTo( files, form );
+		unpositionUpTo( fields, form );
+
 		if ( ! files ) return;
 
 		var syncPreviews = function () {
@@ -290,6 +320,22 @@
 		if ( typeof MutationObserver === 'function' ) {
 			new MutationObserver( syncPreviews ).observe( files, { childList: true } );
 		}
+	}
+
+	/**
+	 * Limpa a MÍDIA anexada após envio OK (o clear nativo do JFB e o nosso
+	 * clearComposer só cuidavam do texto — a miniatura e o espaço reservado
+	 * ficavam pendurados). Reset pelo caminho NATIVO do JFB: dispara o clique
+	 * no botão de excluir de cada preview (.__file-remove → removeFile do JFB),
+	 * que atualiza o valor interno do campo e remove o .__file do DOM. O
+	 * MutationObserver do wireMedia então desliga o has-previews e recolhe o
+	 * espaço. Desligável junto com clear_on_success.
+	 */
+	function clearMedia( form ) {
+		var removes = form.querySelectorAll( '.jet-form-builder-file-upload__file-remove' );
+		Array.prototype.forEach.call( removes, function ( btn ) {
+			try { btn.click(); } catch ( e ) {}
+		} );
 	}
 
 	function scanForms() {
@@ -320,6 +366,7 @@
 
 			if ( cfg.clear_on_success !== false ) {
 				clearComposer( form );
+				clearMedia( form );
 			}
 
 			window.setTimeout( function () { scheduleAutoSize( form ); }, 100 );

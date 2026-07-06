@@ -2,6 +2,45 @@
 
 Formato: cada versão finalizada gera `dist/conversa-chat-{versao}.zip`.
 
+## 1.1.1
+
+Ajustes do composer de mídia (pós-teste real) + **roteiro do segundo coração**
+(análise profunda do JetFormBuilder). Detalhes em
+[`docs/11-segundo-coracao-jetformbuilder-fluxo-de-envio.md`](../docs/11-segundo-coracao-jetformbuilder-fluxo-de-envio.md).
+
+### Corrigido — preview 50×50 não aparecia (espaço reservado, miniatura oculta)
+Duas causas, ambas de conflito com o JFB (não de config do Value Format):
+- **CSS-base do JFB**: `.jet-form-builder-file-upload__file` vem com `opacity:.5`
+  + `background-image` (ícone placeholder), e o script que devolveria `opacity:1`
+  só entra em validação avançada. Agora forçamos `opacity:1` e sem placeholder.
+- **Posição**: o `.__files` (previews) resolvia em absoluto sob um wrapper
+  `position:relative` do bloco. Agora `unpositionUpTo` (composer.js) zera a
+  position dos ancestrais até o `<form>`, ancorando o preview na moldura certa.
+
+### Corrigido — mídia não limpava após o envio (espaço pendurado)
+`clearMedia` dispara, no `on-success`, o **excluir nativo** de cada preview
+(`.__file-remove` → `removeFile` do JFB). O campo reseta pelo caminho do JFB e o
+`has-previews` desliga → o espaço reservado recolhe.
+
+### Corrigido — validação layout-safe (erro de arquivo grande agora pode aparecer)
+O check de tamanho/tipo de arquivo **só carrega em validação avançada**
+(`media-field.php:205`). Ao ligar o modo avançado, os erros inline
+(`jet-form-builder__field-error`) e os do Media Field (`.__errors`) quebravam a
+pílula — agora são **reposicionados como aviso discreto acima do composer**
+(mesma pegada da mensagem de status). Ativar validação avançada não quebra o layout.
+
+### Botão de excluir sempre visível
+O `.__file-remove` nativo fica escondido (`opacity:0` até hover) e esticado;
+revestimos como um **X** pequeno no canto, sempre visível (melhor no touch).
+
+### Documentado — o SEGUNDO CORAÇÃO (roteiro do JFB)
+Novo [`docs/11`](../docs/11-segundo-coracao-jetformbuilder-fluxo-de-envio.md): o
+pipeline de envio do JFB, o que já "passamos por cima", os **dois modos de
+validação** e como ativar sem quebrar, por que **Limit Form Responses NÃO** serve
+ao composer, quais camadas de **segurança/captcha** ligar, e um roteiro de
+ativação segura. Responde à dúvida de config do Media Field (Value Format não
+afeta o preview).
+
 ## 1.1.0
 
 Correções de UX do composer + **módulo de mídia** (enviar imagem na mensagem)
