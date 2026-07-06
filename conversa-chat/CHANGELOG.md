@@ -2,6 +2,26 @@
 
 Formato: cada versão finalizada gera `dist/conversa-chat-{versao}.zip`.
 
+## 1.1.3
+
+**A causa raiz REAL do preview sumido** (achada pelo diagnóstico no myttooz).
+
+### Corrigido — ancestral do campo de mídia oculto pelo tema (unhideUpTo)
+O diagnóstico no site mostrou o quadro definitivo: o `<img>` do preview **existia e
+era válido** (`blob:…`, opacity 1), mas o `.__files` tinha **`offsetParent` nulo e
+tamanho 0×0** — a assinatura de **`display:none` num ANCESTRAL**. Não era opacity
+(1.1.1), nem o `<img>` (1.1.2): o **tema/Elementor escondia um wrapper acima** do
+campo de mídia, colapsando tudo. Verifiquei que nem o nosso CSS nem o do JFB
+escondem esses wrappers.
+
+Correção determinística: `composer.js::unhideUpTo` caminha do `.__files` até o
+`<form>` e **força visível qualquer ancestral que esteja `display:none`** (inline
+`!important`, só nos ocultos) — sem depender da classe do wrapper. Com isso o
+galho destrava e o preview (miniatura + X) aparece. As defesas anteriores
+seguem: `paintPreviews` (thumb via data-file) e `unpositionUpTo` (âncora no form).
+Verificado ponta a ponta com o composer.js real sobre um campo com ancestral
+`display:none`.
+
 ## 1.1.2
 
 Correção real do **preview da mídia** (o fix de opacity da 1.1.1 mirou o alvo

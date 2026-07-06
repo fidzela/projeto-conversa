@@ -19,6 +19,9 @@
  *    são 100% do JFB (media-field.php + media.field.js); aqui só estilizamos.
  *    No sucesso, limpa a mídia pelo caminho nativo (clearMedia dispara o
  *    excluir de cada preview) para o espaço reservado recolher;
+ *  - destrava ancestral display:none do campo de mídia (unhideUpTo) — no
+ *    myttooz o tema/Elementor ocultava um wrapper acima do .__files (offsetParent
+ *    nulo, 0×0), colapsando o preview mesmo com o <img> válido presente;
  *  - ancora previews/"+" em absoluto no <form> (unpositionUpTo) para o preview
  *    não sumir sob um wrapper posicionado do bloco;
  *  - pinta a miniatura a partir do data-file do próprio .__file (paintPreviews)
@@ -297,6 +300,25 @@
 		}
 	}
 
+	/**
+	 * Força visível qualquer ancestral de `node` (até `stop`) que esteja
+	 * `display: none`. Diagnóstico real (myttooz): o `<img>` do preview existia e
+	 * era válido, mas o `.__files` tinha offsetParent NULO e tamanho 0×0 — a
+	 * assinatura de `display:none` num ANCESTRAL (vindo do tema/Elementor, não do
+	 * nosso CSS nem do JFB). O composer PRECISA do campo de mídia visível, então
+	 * destravamos o galho — determinístico, sem depender da classe do wrapper.
+	 * Inline !important vence regra de folha; só toca quem está oculto.
+	 */
+	function unhideUpTo( node, stop ) {
+		var el = node && node.parentElement;
+		while ( el && el !== stop && el !== document.body ) {
+			if ( window.getComputedStyle( el ).display === 'none' ) {
+				el.style.setProperty( 'display', 'block', 'important' );
+			}
+			el = el.parentElement;
+		}
+	}
+
 	function wireMedia( form ) {
 		var upload = form.querySelector( '.jet-form-builder-file-upload' );
 		if ( ! upload ) return;
@@ -306,7 +328,9 @@
 		var files  = upload.querySelector( '.jet-form-builder-file-upload__files' );
 		var fields = upload.querySelector( '.jet-form-builder-file-upload__fields' );
 
-		// Ancoragem determinística no <form> (ver unpositionUpTo).
+		// Destrava o galho (ancestral display:none do tema) e ancora no <form>.
+		unhideUpTo( files, form );
+		unhideUpTo( fields, form );
 		unpositionUpTo( files, form );
 		unpositionUpTo( fields, form );
 

@@ -3,7 +3,7 @@
  * Plugin Name:       Conversa Chat
  * Plugin URI:        https://github.com/fidzela/projeto-conversa
  * Description:       Chat em tempo real sobre JetEngine (CPT + CCT + Listing Grid), JetFormBuilder e Elementor. O plugin só cobre o que os plugins não fazem nativamente: detecção de mensagens novas e o append incremental renderizado pelo template real do Listing.
- * Version:           1.1.2
+ * Version:           1.1.3
  * Requires at least: 6.0
  * Requires PHP:      7.4
  * Author:            fidzela
@@ -56,7 +56,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'CONVERSA_CHAT_VERSION', '1.1.2' );
+define( 'CONVERSA_CHAT_VERSION', '1.1.3' );
 define( 'CONVERSA_CHAT_FILE', __FILE__ );
 define( 'CONVERSA_CHAT_PATH', plugin_dir_path( __FILE__ ) );
 define( 'CONVERSA_CHAT_URL', plugin_dir_url( __FILE__ ) );
