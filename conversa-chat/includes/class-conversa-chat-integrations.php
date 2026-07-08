@@ -93,6 +93,13 @@ class Conversa_Chat_Integrations {
 			return;
 		}
 
+		// Integridade: só grava o meta se o alvo é mesmo um post do CPT da
+		// conversa — um item com conversa_id apontando para outro post qualquer
+		// (página, produto...) não pode tocar metas alheias.
+		if ( get_post_type( $conversa_id ) !== conversa_chat()->setting( 'cpt' ) ) {
+			return;
+		}
+
 		update_post_meta(
 			$conversa_id,
 			conversa_chat()->setting( 'meta_last_msg' ),

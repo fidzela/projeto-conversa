@@ -65,18 +65,22 @@ class Conversa_Chat_Ajax {
 
 		nocache_headers();
 
-		check_ajax_referer( self::NONCE_ACTION, 'nonce' );
+		// O conversa_id é lido ANTES do nonce porque o nonce é VINCULADO à
+		// conversa (ação conversa_chat_{id}, criada em assets.php na single):
+		// um token emitido para a conversa A não autoriza chamadas sobre a B,
+		// mesmo para um usuário que participe das duas.
+		$conversa_id = isset( $_POST['conversa_id'] ) ? absint( wp_unslash( $_POST['conversa_id'] ) ) : 0;
+
+		if ( ! $conversa_id ) {
+			self::send_error( 'conversa_id inválido.', 'invalid_conversa_id', 400 );
+		}
+
+		check_ajax_referer( self::NONCE_ACTION . '_' . $conversa_id, 'nonce' );
 
 		$user_id = (int) get_current_user_id();
 
 		if ( ! $user_id ) {
 			self::send_error( 'Login obrigatório.', 'not_logged_in', 401 );
-		}
-
-		$conversa_id = isset( $_POST['conversa_id'] ) ? absint( wp_unslash( $_POST['conversa_id'] ) ) : 0;
-
-		if ( ! $conversa_id ) {
-			self::send_error( 'conversa_id inválido.', 'invalid_conversa_id', 400 );
 		}
 
 		$conversa = get_post( $conversa_id );
@@ -140,6 +144,12 @@ class Conversa_Chat_Ajax {
 	 * paridade com o load-more nativo (mesmo enfileiramento de assets). O
 	 * listing_id é sempre reimposto pelo servidor no renderer — o cliente não
 	 * escolhe QUAL listing renderiza.
+	 *
+	 * SANITIZAÇÃO ESTRUTURAL (hardening 1.2.0): o load-more nativo também
+	 * aceita widget_settings do cliente, mas aqui impomos uma forma estrita —
+	 * profundidade limitada, chaves alfanuméricas, valores escalares curtos e
+	 * sem tags — de modo que o payload seja apenas "settings de widget" e nunca
+	 * um veículo para estruturas arbitrárias chegarem ao pipeline de render.
 	 */
 	private static function read_widget_settings() {
 
@@ -150,11 +160,62 @@ class Conversa_Chat_Ajax {
 		$raw = wp_unslash( $_POST['widget_settings'] ); // phpcs:ignore WordPress.Security.ValidatedSanitizedInput
 
 		if ( is_string( $raw ) ) {
-			$decoded = json_decode( $raw, true );
-			return is_array( $decoded ) ? $decoded : array();
+			// O data-nav real do JetEngine tem ~1–2 KB; um payload muito maior
+			// não é um data-nav.
+			if ( strlen( $raw ) > 20000 ) {
+				return array();
+			}
+			$raw = json_decode( $raw, true );
 		}
 
-		return is_array( $raw ) ? $raw : array();
+		return self::sanitize_widget_settings( $raw );
+	}
+
+	/**
+	 * Whitelist de FORMA (não de chaves): mantém a flexibilidade de layout
+	 * (qualquer setting legítimo do grid passa) e corta o que um data-nav
+	 * jamais contém.
+	 *
+	 *  - profundidade máxima 3 (settings responsivos/arrays do grid são rasos);
+	 *  - máx. 60 entradas por nível;
+	 *  - chaves string: apenas [a-zA-Z0-9_-];
+	 *  - valores: bool/int/float, ou string sem tags com até 500 chars.
+	 */
+	private static function sanitize_widget_settings( $raw, $depth = 0 ) {
+
+		if ( $depth >= 3 || ! is_array( $raw ) ) {
+			return array();
+		}
+
+		$clean = array();
+		$count = 0;
+
+		foreach ( $raw as $key => $value ) {
+
+			if ( ++$count > 60 ) {
+				break;
+			}
+
+			if ( is_string( $key ) ) {
+				$key = preg_replace( '/[^a-zA-Z0-9_\-]/', '', $key );
+				if ( '' === $key ) {
+					continue;
+				}
+			} elseif ( ! is_int( $key ) ) {
+				continue;
+			}
+
+			if ( is_bool( $value ) || is_int( $value ) || is_float( $value ) ) {
+				$clean[ $key ] = $value;
+			} elseif ( is_string( $value ) ) {
+				$clean[ $key ] = mb_substr( wp_strip_all_tags( $value ), 0, 500 );
+			} elseif ( is_array( $value ) ) {
+				$clean[ $key ] = self::sanitize_widget_settings( $value, $depth + 1 );
+			}
+			// Objetos e demais tipos: descartados.
+		}
+
+		return $clean;
 	}
 
 	/**
