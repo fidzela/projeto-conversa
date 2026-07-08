@@ -2,6 +2,51 @@
 
 Formato: cada versão finalizada gera `dist/conversa-chat-{versao}.zip`.
 
+## 1.2.0
+
+**Release de segurança** — auditoria completa do plugin e do fluxo nativo de
+envio (JFB → Action "Insert CCT"). Detalhes e modelo de ameaças: docs/12.
+
+### Adicionado — `Conversa_Chat_Guard` (autorização do ENVIO)
+A Action nativa "Insert/Update CCT" **não valida nada no INSERT**: sem guard,
+um POST adulterado injetava mensagem em qualquer conversa (`conversa_id`),
+assinada como qualquer usuário (`from_user`), com qualquer mídia da biblioteca
+(`message_image`). O guard fecha isso **só com hooks nativos**
+(`jet-form-builder/form-handler/before-send` + Jet_Engine
+`custom-content-types/item-to-update`), para submissões JFB no CCT de
+mensagens:
+- login + conversa publish do CPT certo + **participante** (mesmo filtro dos
+  endpoints de leitura);
+- **anti-spoof**: `from_user` e `cct_author_id` SEMPRE sobrescritos com o
+  usuário logado;
+- **anti-IDOR**: anexo numérico precisa ser attachment de IMAGEM do próprio
+  remetente (formatos Media ID e Both; filtro `conversa-chat/media-allowed`);
+- **anti-flood**: `rate_send` (padrão 20/min por usuário+conversa; 0 = off);
+- **anti-CSRF secundário**: referer cross-origin explícito rejeitado (ausente
+  é tolerado); o primário continua sendo o WP Nonce nativo do JFB (docs/11);
+- rejeição pelo mecanismo nativo (`Action_Exception->dynamic_error()`) — a
+  mensagem chega ao usuário pelo status do form (que só aparece em erro).
+- Admin do JetEngine, REST e código **não são tocados** (regras nativas de
+  cada caminho); escape hatch: filtro `conversa-chat/guard-send`.
+
+### Endurecido — endpoints de leitura e superfície geral
+- **Nonce vinculado à conversa** (`conversa_chat_{id}`): token da conversa A
+  não vale para a B. Zero mudança no cliente (já enviava nonce+conversa_id).
+- **`widget_settings` com whitelist de forma**: profundidade ≤ 3, ≤ 60
+  entradas/nível, chaves alfanuméricas, strings sem tags ≤ 500 chars, objetos
+  fora, cap de 20 KB — settings legítimos do grid passam, estrutura arbitrária
+  não. `listing_id` segue SEMPRE reimposto pelo servidor.
+- `on_message_created` só grava `last_message_at` se o alvo é post do CPT da
+  conversa (integridade de metas).
+- Config inline com `JSON_HEX_TAG` + barras escapadas (nenhum valor filtrado
+  fecha o `<script>`).
+- `index.php` de silêncio em todos os diretórios do plugin.
+
+### Verificado
+Harness com stubs WP/JFB/JetEngine sobre as classes reais: **29/29 PASS**
+(escopo, autorização, anti-spoof, anti-IDOR, anti-flood, referer, sanitização,
+integridade de meta). `php -l` limpo em todos os arquivos.
+
 ## 1.1.3
 
 **A causa raiz REAL do preview sumido** (achada pelo diagnóstico no myttooz).

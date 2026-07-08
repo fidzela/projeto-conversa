@@ -82,9 +82,12 @@ class Conversa_Chat_Assets {
 			);
 		}
 
+		// JSON_HEX_TAG e barras escapadas: nenhum valor da config (mesmo vindo
+		// de filtro de terceiros) consegue fechar a tag <script> do inline
+		// (defesa em profundidade contra XSS via config filtrada).
 		wp_add_inline_script(
 			'conversa-chat-layout',
-			'window.ConversaChatConfig = ' . wp_json_encode( self::front_config( $ctx, $realtime ), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES ) . ';',
+			'window.ConversaChatConfig = ' . wp_json_encode( self::front_config( $ctx, $realtime ), JSON_UNESCAPED_UNICODE | JSON_HEX_TAG ) . ';',
 			'before'
 		);
 	}
@@ -132,7 +135,10 @@ class Conversa_Chat_Assets {
 
 		$config = array(
 			'ajaxurl'        => admin_url( 'admin-ajax.php' ),
-			'nonce'          => wp_create_nonce( Conversa_Chat_Ajax::NONCE_ACTION ),
+			// Nonce VINCULADO à conversa (ação conversa_chat_{id}): o endpoint
+			// valida o token contra o conversa_id postado — token de uma
+			// conversa não vale para outra (ver Conversa_Chat_Ajax::validate).
+			'nonce'          => wp_create_nonce( Conversa_Chat_Ajax::NONCE_ACTION . '_' . (int) $ctx['conversa_id'] ),
 			'actions'        => array(
 				'status' => 'conversa_chat_status',
 				'after'  => 'conversa_chat_after',

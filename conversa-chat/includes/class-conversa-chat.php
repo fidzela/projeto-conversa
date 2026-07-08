@@ -171,6 +171,7 @@ class Conversa_Chat {
 			'rate_status'      => 80,     // req/min por usuário+conversa
 			'rate_after'       => 40,
 			'rate_before'      => 40,     // carregar antigas (rolar pra cima)
+			'rate_send'        => 20,     // ENVIOS/min por usuário+conversa (anti-flood; 0 = off)
 			'rate_window'      => 60,
 
 			'debug'            => false,
@@ -275,6 +276,7 @@ class Conversa_Chat {
 		require_once CONVERSA_CHAT_PATH . 'includes/class-conversa-chat-data.php';
 		require_once CONVERSA_CHAT_PATH . 'includes/class-conversa-chat-renderer.php';
 		require_once CONVERSA_CHAT_PATH . 'includes/class-conversa-chat-ajax.php';
+		require_once CONVERSA_CHAT_PATH . 'includes/class-conversa-chat-guard.php';
 		require_once CONVERSA_CHAT_PATH . 'includes/class-conversa-chat-integrations.php';
 		require_once CONVERSA_CHAT_PATH . 'includes/class-conversa-chat-assets.php';
 
@@ -299,6 +301,7 @@ class Conversa_Chat {
 		}
 
 		Conversa_Chat_Ajax::init();
+		Conversa_Chat_Guard::init();
 		Conversa_Chat_Integrations::init();
 		Conversa_Chat_Assets::init();
 	}
